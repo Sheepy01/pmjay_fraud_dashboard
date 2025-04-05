@@ -1,0 +1,810 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Material Dash</title>
+  <!-- plugins:css -->
+  <link rel="stylesheet" href="/static/vendors/mdi/css/materialdesignicons.min.css">
+  <link rel="stylesheet" href="/static/vendors/css/vendor.bundle.base.css">
+  <!-- endinject -->
+  <!-- Plugin css for this page -->
+  <link rel="stylesheet" href="/static/vendors/flag-icon-css/css/flag-icon.min.css">
+  <link rel="stylesheet" href="/static/vendors/jvectormap/jquery-jvectormap.css">
+  <!-- End plugin css for this page -->
+  <!-- Layout styles -->
+  <link rel="stylesheet" href="/static/css/demo/style.css">
+  <!-- End layout styles -->
+  <link rel="shortcut icon" href="/static/images/favicon.png" />
+</head>
+<body>
+<script src="/static/js/preloader.js"></script>
+  <div class="body-wrapper">
+    <!-- partial:partials/_sidebar.html -->
+    <aside class="mdc-drawer mdc-drawer--dismissible mdc-drawer--open">
+      <div class="mdc-drawer__header">
+        <a href="index.html" class="brand-logo">
+          <img src="/static/images/pmjaylogo.png" alt="logo" style="width: 90px; height: auto;">
+        </a>        
+      </div>
+      <div class="mdc-drawer__content">
+        <div class="mdc-list-group">
+          <nav class="mdc-list mdc-drawer-menu">
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-drawer-link" href="index.html">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">home</i>
+                Dashboard
+              </a>
+            </div>
+            {% comment %} <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-drawer-link" href="pages/forms/basic-forms.html">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">track_changes</i>
+                Forms
+              </a>
+            </div>
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-expansion-panel-link" href="#" data-toggle="expansionPanel" data-target="ui-sub-menu">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">dashboard</i>
+                UI Features
+                <i class="mdc-drawer-arrow material-icons">chevron_right</i>
+              </a>
+              <div class="mdc-expansion-panel" id="ui-sub-menu">
+                <nav class="mdc-list mdc-drawer-submenu">
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/ui-features/buttons.html">
+                      Buttons
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/ui-features/typography.html">
+                      Typography
+                    </a>
+                  </div>
+                </nav>
+              </div>
+            </div>
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-drawer-link" href="pages/tables/basic-tables.html">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">grid_on</i>
+                Tables
+              </a>
+            </div>
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-drawer-link" href="pages/charts/chartjs.html">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">pie_chart_outlined</i>
+                Charts
+              </a>
+            </div>
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-expansion-panel-link" href="#" data-toggle="expansionPanel" data-target="sample-page-submenu">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">pages</i>
+                Sample Pages
+                <i class="mdc-drawer-arrow material-icons">chevron_right</i>
+              </a>
+              <div class="mdc-expansion-panel" id="sample-page-submenu">
+                <nav class="mdc-list mdc-drawer-submenu">
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/blank-page.html">
+                      Blank Page
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/403.html">
+                      403
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/404.html">
+                      404
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/500.html">
+                      500
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/505.html">
+                      505
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/login.html">
+                      Login
+                    </a>
+                  </div>
+                  <div class="mdc-list-item mdc-drawer-item">
+                    <a class="mdc-drawer-link" href="pages/samples/register.html">
+                      Register
+                    </a>
+                  </div>
+                </nav>
+              </div>
+            </div>
+            <div class="mdc-list-item mdc-drawer-item">
+              <a class="mdc-drawer-link" href="https://www.bootstrapdash.com/demo/material-admin-free/jquery/documentation/documentation.html" target="_blank">
+                <i class="material-icons mdc-list-item__start-detail mdc-drawer-item-icon" aria-hidden="true">description</i>
+                Documentation
+              </a>
+            </div> {% endcomment %}
+          </nav>
+        </div>
+        {% comment %} <div class="profile-actions">
+          <a href="javascript:;">Settings</a>
+          <span class="divider"></span>
+          <a href="javascript:;">Logout</a>
+        </div> {% endcomment %}
+      </div>
+    </aside>
+    <!-- partial -->
+    <div class="main-wrapper mdc-drawer-app-content">
+      <!-- partial:partials/_navbar.html -->
+      <header class="mdc-top-app-bar">
+        <button class="material-icons mdc-top-app-bar__navigation-icon mdc-icon-button sidebar-toggler">menu</button>
+        <span class="mdc-top-app-bar__title">PMJAY FRAUD DETECTION DASHBOARD, BIHAR</span>
+      </header>
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
+        <select id="districtDropdown" class="form-control">
+          <option value="">All Districts</option>
+        </select>
+      </div>      
+      <!-- partial -->
+      <div class="page-wrapper mdc-toolbar-fixed-adjust">
+        <main class="content-wrapper">
+          <div class="mdc-layout-grid">
+            <div class="mdc-layout-grid__inner">
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--success custom-card-height card">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Number of Flagged Claims</h5>
+                      <span class="overall-value">{{ flagged_claims_overall }}</span>
+                    </div>
+
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_flagged_claims' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">48% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ flagged_claims_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ flagged_claims_last_30_days }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ flagged_claims_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">dvr</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--danger custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Geographic Anomalies</h5>
+                      <span class="overall-value">{{ geo_overall }}</span>
+                    </div>
+
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_geo_anomalies' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">55% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ geo_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ geo_last_30_days }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ geo_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">public</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--primary custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">High Value Claims</h5>
+                      <span class="overall-value">{{ surgical_overall }}</span>
+                      <span class="overall-value">{{ medical_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_high_value_claims' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- Split Container for Surgical and Medical -->
+                    <div class="split-container">
+                      <!-- Surgical Section -->
+                      <div class="split-section">
+                        <div class="split-title-wrapper surgical-box">
+                          Surgical
+                        </div>
+                        <div class="card-data">
+                          <div class="high-value-data-row">
+                            <span>Overall:</span>
+                            <span>{{ surgical_overall }}</span>
+                          </div>
+                          <div class="high-value-data-row">
+                            <span>Last 30 days:</span>
+                            <span>{{ surgical_last_30_days }}</span>
+                          </div>
+                          <div class="high-value-data-row">
+                            <span>Yesterday:</span>
+                            <span>{{ surgical_yesterday }}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Vertical Divider -->
+                      <div class="vertical-divider"></div>
+
+                      <!-- Medical Section -->
+                      <div class="split-section">
+                        <div class="split-title-wrapper medical-box">
+                          Medical
+                        </div>
+                        <div class="card-data">
+                          <div class="high-value-data-row">
+                            <span>Overall:</span>
+                            <span>{{ medical_overall }}</span>
+                          </div>
+                          <div class="high-value-data-row">
+                            <span>Last 30 days:</span>
+                            <span>{{ medical_last_30_days }}</span>
+                          </div>
+                          <div class="high-value-data-row">
+                            <span>Yesterday:</span>
+                            <span>{{ medical_yesterday }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">trending_up</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Unusual Treatment Patterns</h5>
+                      <span class="overall-value">{{ unusual_treatment_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ unusual_treatment_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ unusual_treatment_last_30_days }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ unusual_treatment_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Opthalmology OT Cases</h5>
+                      <h3 id="ot-violation-count">0</h3>
+                      <span class="overall-value">{{ ophtho_ot_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ ophtho_ot_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ ophtho_ot_last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ ophtho_ot_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Opthalmology Preauth Time</h5>
+                      <h3 id="preauth-timing-count">0</h3>
+                      <span class="overall-value">{{ ophtho_time_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ ophtho_time_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ ophtho_ot_last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ ophtho_ot_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Opthalmology Age Cases</h5>
+                      <h3 id="under-40-cataract-count">0</h3>
+                      <span class="overall-value">{{ ophtho_age_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ ophtho_age_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ ophtho_age_last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ ophtho_age_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Hospital Bed Cases</h5>
+                      <span class="overall-value">{{ bed_violations.overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ bed_violations.overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ bed_violations.last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ bed_violations.yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Emergency Cases</h5>
+                      <h3 id="emergency-case-count">0</h3>
+                      <span class="overall-value">{{ emergency_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ emergency_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ emergency_last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ emergency_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card info-card info-card--info custom-card-height">
+                  <div class="card-inner">
+
+                    <!-- Title and Overall Value in one container -->
+                    <div class="card-header">
+                      <h5 class="card-title">Family ID Cases</h5>
+                      <h3 id="same-day-claims-count">0</h3>
+                      <span class="overall-value">{{ family_overall }}</span>
+                    </div>
+                    
+                    <!-- Download button placed in the top-right corner -->
+                    <a href="{% url 'download_unusual_treatment' %}" class="btn btn-primary" style="position: absolute; top: 0; right: 0; margin: 10px;"><i class="material-icons custom-icon-size">file_download</i></a>
+                    <h5 class="font-weight-light pb-2 mb-1 border-bottom"></h5>
+                    {% comment %} <p class="tx-12 text-muted">87% target reached</p> {% endcomment %}
+                    <!-- New Data Rows -->
+                    <div class="card-data">
+                      <div class="data-row">
+                        <span>Overall:</span>
+                        <span>{{ family_overall }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Last 30 days:</span>
+                        <span>{{ family_last30 }}</span>
+                      </div>
+                      <div class="data-row">
+                        <span>Yesterday:</span>
+                        <span>{{ family_yesterday }}</span>
+                      </div>
+                    </div>
+                    <div class="card-icon-wrapper">
+                      <i class="material-icons">local_hospital</i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {% comment %} <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-12">
+                <div class="mdc-card">
+                  <div class="d-flex justify-content-between">
+                    <h4 class="card-title mb-0">Revenue by location</h4>
+                    <div>
+                        <i class="material-icons refresh-icon">refresh</i>
+                        <i class="material-icons options-icon ml-2">more_vert</i>
+                    </div>
+                  </div>
+                  <div class="d-block d-sm-flex justify-content-between align-items-center">
+                      <h5 class="card-sub-title mb-2 mb-sm-0">Sales performance revenue based by country</h5>
+                      <div class="menu-button-container">
+                        <button class="mdc-button mdc-menu-button mdc-button--raised button-box-shadow tx-12 text-dark bg-white font-weight-light">
+                            Last 7 days
+                          <i class="material-icons">arrow_drop_down</i>
+                        </button>
+                        <div class="mdc-menu mdc-menu-surface" tabindex="-1">
+                          <ul class="mdc-list" role="menu" aria-hidden="true" aria-orientation="vertical">
+                            <li class="mdc-list-item" role="menuitem">
+                              <h6 class="item-subject font-weight-normal">Back</h6>
+                            </li>
+                            <li class="mdc-list-item" role="menuitem">
+                              <h6 class="item-subject font-weight-normal">Forward</h6>
+                            </li>
+                            <li class="mdc-list-item" role="menuitem">
+                              <h6 class="item-subject font-weight-normal">Reload</h6>
+                            </li>
+                            <li class="mdc-list-divider"></li>
+                            <li class="mdc-list-item" role="menuitem">
+                              <h6 class="item-subject font-weight-normal">Save As..</h6>
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                  </div>
+                  <div class="mdc-layout-grid__inner mt-2">
+                    <div class="mdc-layout-grid__cell mdc-layout-grid__cell--span-6 mdc-layout-grid__cell--span-8-tablet">
+                        <div class="table-responsive">
+                          <table class="table dashboard-table">
+                            <tbody>
+                              <tr>
+                                <td>
+                                  <span class="flag-icon-container"><i class="flag-icon flag-icon-us mr-2"></i></span>United States</td>
+                                <td>$1,671.10</td>
+                                <td class=" font-weight-medium"> 39% </td>
+                              </tr>
+                              <tr>
+                                <td> <span class="flag-icon-container"><i class="flag-icon flag-icon-ph mr-2"></i></span>Philippines	</td>
+                                <td>$1,064.75</td>
+                                <td class=" font-weight-medium"> 30% </td>
+                              </tr>
+                              <tr>
+                                <td> <span class="flag-icon-container"><i class="flag-icon flag-icon-gb mr-2"></i></span>United Kingdom</td>
+                                <td>$1,055.98</td>
+                                <td class=" font-weight-medium"> 45% </td>
+                              </tr>
+                              <tr>
+                                <td> <span class="flag-icon-container"><i class="flag-icon flag-icon-ca mr-2"></i></span>Canada</td>
+                                <td>$1,045.49</td>
+                                <td class=" font-weight-medium"> 80% </td>
+                              </tr>
+                              <tr>
+                                <td> <span class="flag-icon-container"><i class="flag-icon flag-icon-fr mr-2"></i></span>France</td>
+                                <td>$2,050.93</td>
+                                <td class=" font-weight-medium"> 10% </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                    </div>
+                    <div class="mdc-layout-grid__cell mdc-layout-grid__cell--span-6 mdc-layout-grid__cell--span-8-tablet"> 
+                      <div id="revenue-map" class="revenue-world-map"></div>
+                    </div>
+                  </div>
+                </div> 
+              </div> {% endcomment %}
+              {% comment %} <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card bg-success text-white">
+                  <div class="d-flex justify-content-between">
+                    <h3 class="font-weight-normal">Impressions</h3>
+                    <i class="material-icons options-icon text-white">more_vert</i>
+                  </div>
+                  <div class="mdc-layout-grid__inner align-items-center">
+                    <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-4-desktop mdc-layout-grid__cell--span-3-tablet mdc-layout-grid__cell--span-2-phone">
+                      <div>
+                        <h5 class="font-weight-normal mt-2">Customers 58.39k</h5>
+                        <h2 class="font-weight-normal mt-3 mb-0">636,757K</h2>
+                      </div>
+                    </div>
+                    <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-8-desktop mdc-layout-grid__cell--span-5-tablet mdc-layout-grid__cell--span-2-phone">
+                      <canvas id="impressions-chart" height="80"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop mdc-layout-grid__cell--span-4-tablet">
+                <div class="mdc-card bg-info text-white">
+                    <div class="d-flex justify-content-between">
+                      <h3 class="font-weight-normal">Traffic</h3>
+                      <i class="material-icons options-icon text-white">more_vert</i>
+                    </div>
+                    <div class="mdc-layout-grid__inner align-items-center">
+                      <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-4-desktop mdc-layout-grid__cell--span-3-tablet mdc-layout-grid__cell--span-2-phone">
+                        <div>
+                          <h5 class="font-weight-normal mt-2">Customers 58.39k</h5>
+                          <h2 class="font-weight-normal mt-3 mb-0">636,757K</h2>
+                        </div>
+                      </div>
+                      <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-8-desktop mdc-layout-grid__cell--span-5-tablet mdc-layout-grid__cell--span-2-phone">
+                        <canvas id="traffic-chart" height="80"></canvas>
+                      </div>
+                    </div>
+                </div>
+              </div> {% endcomment %}
+              {% comment %} <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-8">
+                <div class="mdc-card">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <h4 class="card-title mb-2 mb-sm-0">Revenue by location</h4>
+                    <div class="d-flex justtify-content-between align-items-center">
+                      <p class="d-none d-sm-block text-muted tx-12 mb-0 mr-2">Goal reached</p>
+                      <i class="material-icons options-icon">more_vert</i>
+                    </div>
+                  </div>
+                  <div class="d-block d-sm-flex justify-content-between align-items-center">
+                    <h6 class="card-sub-title mb-0">Sales performance revenue based by country</h6>
+                    <div class="mdc-tab-wrapper revenue-tab mdc-tab--secondary"> 
+                      <div class="mdc-tab-bar" role="tablist">
+                        <div class="mdc-tab-scroller">
+                          <div class="mdc-tab-scroller__scroll-area">
+                            <div class="mdc-tab-scroller__scroll-content">
+                              <button class="mdc-tab mdc-tab--active" role="tab" aria-selected="true" tabindex="0">
+                                <span class="mdc-tab__content">
+                                  <span class="mdc-tab__text-label">1W</span>
+                                </span>
+                                <span class="mdc-tab-indicator mdc-tab-indicator--active">
+                                  <span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span>
+                                </span>
+                                <span class="mdc-tab__ripple"></span>
+                              </button>
+                              <button class="mdc-tab mdc-tab" role="tab" aria-selected="true" tabindex="0">
+                                <span class="mdc-tab__content">
+                                  <span class="mdc-tab__text-label">1M</span>
+                                </span>
+                                <span class="mdc-tab-indicator mdc-tab-indicator">
+                                  <span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span>
+                                </span>
+                                <span class="mdc-tab__ripple"></span>
+                              </button>
+                              <button class="mdc-tab mdc-tab" role="tab" aria-selected="true" tabindex="0">
+                                <span class="mdc-tab__content">
+                                  <span class="mdc-tab__text-label">3M</span>
+                                </span>
+                                <span class="mdc-tab-indicator mdc-tab-indicator">
+                                  <span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span>
+                                </span>
+                                <span class="mdc-tab__ripple"></span>
+                              </button>
+                              <button class="mdc-tab mdc-tab" role="tab" aria-selected="true" tabindex="0">
+                                <span class="mdc-tab__content">
+                                  <span class="mdc-tab__text-label">1Y</span>
+                                </span>
+                                <span class="mdc-tab-indicator mdc-tab-indicator">
+                                  <span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span>
+                                </span>
+                                <span class="mdc-tab__ripple"></span>
+                              </button>
+                              <button class="mdc-tab mdc-tab" role="tab" aria-selected="true" tabindex="0">
+                                <span class="mdc-tab__content">
+                                  <span class="mdc-tab__text-label">ALL</span>
+                                </span>
+                                <span class="mdc-tab-indicator mdc-tab-indicator">
+                                  <span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span>
+                                </span>
+                                <span class="mdc-tab__ripple"></span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="content content--active">    
+                      </div>
+                      <div class="content">
+                      </div>
+                      <div class="content">    
+                      </div>
+                      <div class="content">
+                      </div>
+                      <div class="content">
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chart-container mt-4">
+                    <canvas id="revenue-chart" height="260"></canvas>
+                  </div>
+                </div>
+              </div> {% endcomment %}
+              {% comment %} <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-4 mdc-layout-grid__cell--span-8-tablet">
+                <div class="mdc-card">
+                  <div class="d-flex d-lg-block d-xl-flex justify-content-between">
+                    <div>
+                      <h4 class="card-title">Order Statistics</h4>
+                      <h6 class="card-sub-title">Customers 58.39k</h6>
+                    </div>
+                    <div id="sales-legend" class="d-flex flex-wrap"></div>
+                  </div>
+                  <div class="chart-container mt-4">
+                    <canvas id="chart-sales" height="260"></canvas>
+                  </div>
+                </div>
+              </div> {% endcomment %}
+            </div>
+          </div>
+        </main>
+        <!-- Modal Overlay (hidden by default) -->
+        <div id="modal-overlay" class="modal-overlay" style="display: none;">
+          <div class="modal-content">
+            <!-- Close Button (top-middle) -->
+            <span id="modal-close" class="modal-close">&times;</span>
+            <!-- Modal Body Content -->
+            <div class="modal-body">
+              <h2>Modal Title</h2>
+              <p>Here you can add detailed information for the card.</p>
+            </div>
+          </div>
+        </div>
+        {% comment %} <!-- partial:partials/_footer.html -->
+        <footer>
+          <div class="mdc-layout-grid">
+            <div class="mdc-layout-grid__inner">
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop">
+                <span class="text-center text-sm-left d-block d-sm-inline-block tx-14">Copyright © <a href="https://www.bootstrapdash.com/" target="_blank">bootstrapdash.com </a>2020</span>
+              </div>
+              <div class="mdc-layout-grid__cell stretch-card mdc-layout-grid__cell--span-6-desktop d-flex justify-content-end">
+                <span class="float-none float-sm-right d-block mt-1 mt-sm-0 text-center tx-14">Free <a href="https://www.bootstrapdash.com/material-design-dashboard/" target="_blank"> material admin </a> dashboards from Bootstrapdash.com</span>
+              </div>
+            </div>
+          </div>
+        </footer>
+        <!-- partial --> {% endcomment %}
+      </div>
+    </div>
+  </div>
+
+
+  <!-- plugins:js -->
+  <script src="/static/vendors/js/vendor.bundle.base.js"></script>
+  <!-- endinject -->
+  <!-- Plugin js for this page-->
+  <script src="/static/vendors/chartjs/Chart.min.js"></script>
+  <script src="/static/vendors/jvectormap/jquery-jvectormap.min.js"></script>
+  <script src="/static/vendors/jvectormap/jquery-jvectormap-world-mill-en.js"></script>
+  <!-- End plugin js for this page-->
+  <!-- inject:js -->
+  <script src="/static/js/material.js"></script>
+  <script src="/static/js/misc.js"></script>
+  <!-- endinject -->
+  <!-- Custom js for this page-->
+  <script src="/static/js/dashboard.js"></script>
+  <!-- End custom js for this page-->
+
+
+</body>
+</html> 
