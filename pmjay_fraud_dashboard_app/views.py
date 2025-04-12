@@ -13,91 +13,114 @@ class Upper(Func):
     function = 'UPPER'
     template = '%(function)s(%(expressions)s)'
 
-def filter_dashboard_data(request):
-    district = request.GET.get('district')
-    queryset = Last24Hour.objects.all()
+def flagged_claims_chart_data(request):
+    district_filter = request.GET.get('district', '').strip()
+    queryset = Last24Hour.objects.filter(hospital_type="P")
+    if district_filter and district_filter.lower() != "all":
+        queryset = queryset.filter(district_name__iexact=district_filter)
+    flagged_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    flagged_claims = queryset.filter(hospital_id__in=flagged_hospitals)
+    chart_data = flagged_claims.values('district_name').annotate(count=Count('id')).order_by('-count')
+    labels = [entry['district_name'] for entry in chart_data]
+    values = [entry['count'] for entry in chart_data]
+    return JsonResponse({'labels': labels, 'values': values})
 
-    if district:
-        queryset = queryset.filter(district_name=district)
+from django.http import JsonResponse
+from django.db.models import F, Func, Count
+from .models import Last24Hour
 
-    # Sample data aggregation (you can add your actual 5 rules here)
-    ot_violations = queryset.filter(rule_ot_violation=True).count()
-    preauth_timing_issues = queryset.filter(rule_preauth_time=True).count()
-    under_40_cataracts = queryset.filter(rule_age_cataract=True).count()
-    emergency_cases = queryset.filter(rule_emergency=True).count()
-    same_day_claims = queryset.filter(rule_multiple_claims=True).count()
+# Define an Upper function to use in annotations
+class Upper(Func):
+    function = 'UPPER'
+    template = '%(function)s(%(expressions)s)'
+
+def geo_anomalies_chart_data(request):
+    district_filter = request.GET.get("district", "").strip()
+    queryset = Last24Hour.objects.filter(hospital_type="P")
+    if district_filter and district_filter.lower() != "all":
+        queryset = queryset.filter(district_name__iexact=district_filter)
+    geo_anomalies = (
+        queryset
+        .annotate(
+            state_name_upper=Upper('state_name'),
+            hospital_state_name_upper=Upper('hospital_state_name')
+        )
+        .exclude(state_name_upper=F('hospital_state_name_upper'))
+        .values('district_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    labels = [entry["district_name"] for entry in geo_anomalies if entry["district_name"]]
+    values = [entry["count"] for entry in geo_anomalies]
 
     return JsonResponse({
-        'ot_violations': ot_violations,
-        'preauth_timing_issues': preauth_timing_issues,
-        'under_40_cataracts': under_40_cataracts,
-        'emergency_cases': emergency_cases,
-        'same_day_claims': same_day_claims
+        "labels": labels,
+        "values": values
     })
 
-def get_districts(request):
-    districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
-    district_list = [d for d in districts if d]  # Remove None/empty values
-    return JsonResponse({'districts': district_list})
 
-def get_rule_counts(df):
+
+def get_rule_counts(df, district=None):
     """
-    Given a DataFrame (df) of Last24Hour records (already filtered to hospital_type='P' and with
-    necessary columns converted), returns a dictionary with counts for each of the 5 rules:
-      1) Ophthalmology OT Cases: For procedure_code='SE020A', count grouped daily cases 
-         that exceed the threshold = (num_ot * num_surgeons * 30)
-      2) Ophthalmology Preauth Time: For procedure_code='SE020A', count cases where the extracted
-         hour (from preauth_initiated_time) is between 8 and 17 (i.e. 8AM to 5:59 PM).\n
-      3) Ophthalmology Age Cases: For procedure_code='SE020A', count cases with age_years < 40\n
-      4) Emergency Cases: Count cases where admission_type = 'E' and procedure_details contain any of 
-         ['cataract', 'oncology', 'dialysis']\n
-      5) Family ID Cases: Count cases where, for a given family_id and date, the count > 2.
+    Given a DataFrame (df) of Last24Hour records (already converted and cleaned),
+    optionally filters by district and returns a dictionary with counts for each of the 5 rules:
+      1) Ophthalmology OT Cases
+      2) Ophthalmology Preauth Time
+      3) Ophthalmology Age Cases
+      4) Emergency Cases
+      5) Family ID Cases
     """
+    # Optionally filter by district if provided
+    if district and district.strip() != "":
+        # Clean district names and filter
+        df['district_name'] = df['district_name'].fillna('').astype(str).str.upper().str.strip()
+        district = district.strip().upper()
+        df = df[df['district_name'] == district]
+        if df.empty:
+            return {'ophtho_ot': 0, 'ophtho_time': 0, 'ophtho_age': 0, 'emergency': 0, 'family': 0}
+
     # ---- Rule 1: Ophthalmology OT Cases ----
-    # Filter for cataract cases (assuming procedure_code column exists and is already uppercased)
     df_ophtho = df[df['procedure_code'] == 'SE020A'].copy()
-    # Group by hospital_id and date_only to compute daily counts
     grp = df_ophtho.groupby(['hospital_id', 'date_only']).size().reset_index(name='daily_count')
     df_ophtho = df_ophtho.merge(grp, on=['hospital_id', 'date_only'], how='left')
-    # Load OT & Surgeon info from SuspiciousHospital into a dictionary: {hospital_id: threshold}
+
     sh_qs = SuspiciousHospital.objects.all().values('hospital_id', 'number_of_ot', 'number_of_surgeons')
-    threshold_dict = {}
-    for rowb in sh_qs:
-        hosp = str(rowb['hospital_id']).upper()
-        num_ot = rowb.get('number_of_ot') or 0
-        num_surgeons = rowb.get('number_of_surgeons') or 0
-        threshold_dict[hosp] = num_ot * num_surgeons * 30
-    # For each row, mark as violating if daily_count > threshold
-    def flag_ot(row):
-        hosp = str(row['hospital_id']).upper()
-        th = threshold_dict.get(hosp, 0)
-        return row['daily_count'] > th
-    df_ophtho['flag_ot'] = df_ophtho.apply(flag_ot, axis=1)
-    count_ophtho_ot = df_ophtho[df_ophtho['flag_ot']].shape[0]
-    
-    # ---- Rule 2: Ophthalmology Preauth Time ----
-    df_ophtho_time = df[df['procedure_code'] == 'SE020A'].copy()
-    count_ophtho_time = df_ophtho_time[df_ophtho_time['hour'].between(8, 17)].shape[0]
-    
-    # ---- Rule 3: Ophthalmology Age Cases ----
-    df_ophtho_age = df[df['procedure_code'] == 'SE020A'].copy()
-    count_ophtho_age = df_ophtho_age[df_ophtho_age['age_years'] < 40].shape[0]
-    
-    # ---- Rule 4: Emergency Cases ----
-    df_emergency = df.copy()
-    df_emergency['emergency_flag'] = df_emergency.apply(
-        lambda r: (r['admission_type'] == 'E') and 
-                  any(keyword in r['procedure_details'] for keyword in ['cataract','oncology','dialysis']),
+    threshold_dict = {
+        str(row['hospital_id']).upper(): (row.get('number_of_ot') or 0) * (row.get('number_of_surgeons') or 0) * 30
+        for row in sh_qs
+    }
+    df_ophtho['flag_ot'] = df_ophtho.apply(
+        lambda row: row['daily_count'] > threshold_dict.get(str(row['hospital_id']).upper(), 0),
         axis=1
     )
-    count_emergency = df_emergency[df_emergency['emergency_flag']].shape[0]
-    
+    count_ophtho_ot = df_ophtho[df_ophtho['flag_ot']].shape[0]
+    df.loc[df_ophtho[df_ophtho['flag_ot']].index, 'is_unusual'] = True
+
+    # ---- Rule 2: Ophthalmology Preauth Time (8AM–6PM) ----
+    df_ophtho_time = df[(df['procedure_code'] == 'SE020A') & (df['hour'].between(8, 17))]
+    count_ophtho_time = df_ophtho_time.shape[0]
+    df.loc[df_ophtho_time.index, 'is_unusual'] = True
+
+    # ---- Rule 3: Ophthalmology Age Cases ----
+    df_ophtho_age = df[(df['procedure_code'] == 'SE020A') & (df['age_years'] < 40)]
+    count_ophtho_age = df_ophtho_age.shape[0]
+    df.loc[df_ophtho_age.index, 'is_unusual'] = True
+
+    # ---- Rule 4: Emergency Cases ----
+    df_emergency = df[(df['admission_type'] == 'E') &
+                      (df['procedure_details'].str.contains('cataract|oncology|dialysis', case=False, na=False))]
+    count_emergency = df_emergency.shape[0]
+    df.loc[df_emergency.index, 'is_unusual'] = True
+
     # ---- Rule 5: Family ID Cases ----
-    # Group by family_id and date_only and count how many times each appears
+    if 'family_id' not in df.columns:
+        df['family_id'] = ''
     grp_fam = df.groupby(['family_id', 'date_only']).size().reset_index(name='fam_count')
-    df_family = df.merge(grp_fam, on=['family_id', 'date_only'], how='left')
-    count_family = df_family[df_family['fam_count'] > 2].shape[0]
-    
+    df = df.merge(grp_fam, on=['family_id', 'date_only'], how='left')
+    df_family_repeat = df[df['fam_count'] > 2]
+    count_family = df_family_repeat.shape[0]
+    df.loc[df_family_repeat.index, 'is_unusual'] = True
+
     return {
         'ophtho_ot': count_ophtho_ot,
         'ophtho_time': count_ophtho_time,
@@ -106,153 +129,318 @@ def get_rule_counts(df):
         'family': count_family
     }
 
-def get_bed_violations(df):
+def filter_dashboard_data(request):
+    district = request.GET.get('district', '').strip()
+    print(f"District: {district}")
+    
+    # Start with records where hospital_type is "P"
+    queryset = Last24Hour.objects.filter(hospital_type="P")
+    if district and district.lower() != "all":
+        queryset = queryset.filter(district_name__iexact=district)
+    
+    # Define time variables
+    now = timezone.now()
+    yesterday_dt = now - timedelta(days=1)
+    last_30_dt = now - timedelta(days=30)
+    
+    # ----- Flagged Claims -----
+    flagged_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    flagged_claims_overall = queryset.filter(
+        hospital_id__in=flagged_hospitals
+    ).count()
+    flagged_claims_last_30_days = queryset.filter(
+        hospital_id__in=flagged_hospitals,
+        preauth_initiated_date__gte=last_30_dt,
+        preauth_initiated_date__lte=now
+    ).count()
+    flagged_claims_yesterday = queryset.filter(
+        hospital_id__in=flagged_hospitals,
+        preauth_initiated_date__date=yesterday_dt.date()
+    ).count()
+    
+    # ----- High Value Claims - Surgical -----
+    surgical_overall = queryset.filter(
+        case_type="SURGICAL",
+        claim_initiated_amount__gt=100000
+    ).count()
+    surgical_last_30_days = queryset.filter(
+        case_type="SURGICAL",
+        claim_initiated_amount__gt=100000,
+        preauth_initiated_date__gte=last_30_dt
+    ).count()
+    surgical_yesterday = queryset.filter(
+        case_type="SURGICAL",
+        claim_initiated_amount__gt=100000,
+        preauth_initiated_date__date=yesterday_dt.date()
+    ).count()
+    
+    # ----- High Value Claims - Medical -----
+    medical_overall = queryset.filter(
+        case_type="MEDICAL",
+        claim_initiated_amount__gt=25000
+    ).count()
+    medical_last_30_days = queryset.filter(
+        case_type="MEDICAL",
+        claim_initiated_amount__gt=25000,
+        preauth_initiated_date__gte=last_30_dt
+    ).count()
+    medical_yesterday = queryset.filter(
+        case_type="MEDICAL",
+        claim_initiated_amount__gt=25000,
+        preauth_initiated_date__date=yesterday_dt.date()
+    ).count()
+    
+    # ----- Geographic Anomalies -----
+    class Upper(Func):
+        function = 'UPPER'
+        template = '%(function)s(%(expressions)s)'
+    
+    geo_overall = (
+        queryset
+        .annotate(
+            state_name_upper=Upper('state_name'),
+            hospital_state_name_upper=Upper('hospital_state_name')
+        )
+        .exclude(state_name_upper=F('hospital_state_name_upper'))
+        .count()
+    )
+    geo_last_30_days = (
+        queryset
+        .filter(preauth_initiated_date__gte=last_30_dt, preauth_initiated_date__lte=now)
+        .annotate(
+            state_name_upper=Upper('state_name'),
+            hospital_state_name_upper=Upper('hospital_state_name')
+        )
+        .exclude(state_name_upper=F('hospital_state_name_upper'))
+        .count()
+    )
+    geo_yesterday = (
+        queryset
+        .filter(preauth_initiated_date__date=yesterday_dt.date())
+        .annotate(
+            state_name_upper=Upper('state_name'),
+            hospital_state_name_upper=Upper('hospital_state_name')
+        )
+        .exclude(state_name_upper=F('hospital_state_name_upper'))
+        .count()
+    )
+    
+    # ----- Unusual Treatment Patterns -----
+    qs = queryset.values()
+    df = pd.DataFrame(qs)
+    if not df.empty:
+        df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'], errors='coerce').dt.tz_localize(None)
+        df['date_only'] = df['preauth_initiated_date'].dt.date
+        df['procedure_code'] = df['procedure_code'].fillna('').astype(str).str.strip().str.upper()
+        df['admission_type'] = df['admission_type'].fillna('').astype(str).str.strip().str.upper()
+        df['procedure_details'] = df['procedure_details'].fillna('').astype(str).str.lower()
+        df['age_years'] = pd.to_numeric(df['age_years'], errors='coerce')
+        if 'preauth_initiated_time' in df.columns and df['preauth_initiated_time'].notna().any():
+            df['preauth_initiated_time'] = pd.to_datetime(df['preauth_initiated_time'], format='%H:%M:%S', errors='coerce')
+            df['hour'] = df['preauth_initiated_time'].dt.hour
+        else:
+            df['hour'] = df['preauth_initiated_date'].dt.hour
+    else:
+        df = pd.DataFrame()
+    
+    overall_rule_counts = get_rule_counts(df, district) if not df.empty else {key: 0 for key in ['ophtho_ot', 'ophtho_time', 'ophtho_age', 'emergency', 'family']}
+    
+    last_30_date = last_30_dt.date()
+    yesterday_date = yesterday_dt.date()
+    df_last30 = df[df['date_only'] >= last_30_date] if not df.empty else df
+    last30_rule_counts = get_rule_counts(df_last30, district) if not df_last30.empty else {key: 0 for key in ['ophtho_ot', 'ophtho_time', 'ophtho_age', 'emergency', 'family']}
+    df_yesterday = df[df['date_only'] == yesterday_date] if not df.empty else df
+    yesterday_rule_counts = get_rule_counts(df_yesterday, district) if not df_yesterday.empty else {key: 0 for key in ['ophtho_ot', 'ophtho_time', 'ophtho_age', 'emergency', 'family']}
+    
+    df_unusual = get_unusual_rows(district) if not df.empty else pd.DataFrame()
+    unusual_overall = len(df_unusual)
+    df_unusual_last30 = df_unusual[df_unusual['date_only'] >= last_30_date] if not df_unusual.empty else pd.DataFrame()
+    unusual_last_30_days = len(df_unusual_last30) if not df_unusual_last30.empty else 0
+    df_unusual_yesterday = df_unusual[df_unusual['date_only'] == yesterday_date] if not df_unusual.empty else pd.DataFrame()
+    unusual_yesterday = len(df_unusual_yesterday) if not df_unusual_yesterday.empty else 0
+    
+    ot_violations = overall_rule_counts.get('ophtho_ot', 0)
+    preauth_timing_issues = overall_rule_counts.get('ophtho_time', 0)
+    under_40_cataracts = overall_rule_counts.get('ophtho_age', 0)
+    emergency_cases = overall_rule_counts.get('emergency', 0)
+    same_day_claims = overall_rule_counts.get('family', 0)
+    
+    return JsonResponse({
+        # Flagged Claims
+        'flagged_claims_overall': flagged_claims_overall,
+        'flagged_claims_last_30_days': flagged_claims_last_30_days,
+        'flagged_claims_yesterday': flagged_claims_yesterday,
+        
+        # High Value Claims - Surgical
+        'surgical_overall': surgical_overall,
+        'surgical_last_30_days': surgical_last_30_days,
+        'surgical_yesterday': surgical_yesterday,
+        
+        # High Value Claims - Medical
+        'medical_overall': medical_overall,
+        'medical_last_30_days': medical_last_30_days,
+        'medical_yesterday': medical_yesterday,
+        
+        # Geographic Anomalies
+        'geo_anomaly_overall': geo_overall,
+        'geo_anomaly_last_30_days': geo_last_30_days,
+        'geo_anomaly_yesterday': geo_yesterday,
+        
+        # Unusual Treatment Patterns (Main Card)
+        'unusual_overall': unusual_overall,
+        'unusual_last_30_days': unusual_last_30_days,
+        'unusual_yesterday': unusual_yesterday,
+        
+        # Individual Unusual Rule Cards (from overall_rule_counts)
+        'ot_violations': ot_violations,
+        'preauth_timing_issues': preauth_timing_issues,
+        'under_40_cataracts': under_40_cataracts,
+        'emergency_cases': emergency_cases,
+        'same_day_claims': same_day_claims,
+    })
+
+def get_districts(request):
+    districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
+    district_list = [d for d in districts if d]  # Remove None/empty values
+    return JsonResponse({'districts': district_list})
+
+def add_bed_violation_column(df):
     if df.empty:
-        return 0
+        df['bed_violation'] = False
+        return df
 
     # Group by hospital and date to get daily admissions
     daily_grp = df.groupby(['hospital_id', 'date_only']).size().reset_index(name='daily_admissions')
     df = df.merge(daily_grp, on=['hospital_id', 'date_only'], how='left')
 
-    beds_qs = HospitalBeds.objects.all().values('hospital_id','bed_strength')
+    # Load bed strength data
+    beds_qs = HospitalBeds.objects.all().values('hospital_id', 'bed_strength')
     bed_dict = {row['hospital_id'].upper(): row['bed_strength'] for row in beds_qs}
 
-    # Compare with bed strength from bed_dict
+    # Compare with bed strength
     def cond_bed_strength(row):
         hosp_id = str(row['hospital_id']).upper()
         b_strength = bed_dict.get(hosp_id, 0)
         return row['daily_admissions'] > b_strength
 
     df['bed_violation'] = df.apply(cond_bed_strength, axis=1)
+    return df
 
-    # Count how many rows are violations
+def get_bed_violations(df):
+    if df.empty:
+        return 0
+
+    if 'preauth_initiated_date' in df.columns:
+        df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'], errors='coerce')
+        df['preauth_initiated_date'] = df['preauth_initiated_date'].dt.tz_localize(None)
+        df['date_only'] = df['preauth_initiated_date'].dt.date
+    else:
+        df['date_only'] = pd.to_datetime(df['date_only'], errors='coerce')
+
+    df = add_bed_violation_column(df)
     return df['bed_violation'].sum()
 
-
-def get_unusual_rows():
+def get_unusual_rows(district="all"):
     """
     Returns a DataFrame of rows that meet ANY of these conditions:
       1) Ophthalmology rule:
-         - procedure_code='SE020A'
+         - procedure_code = 'SE020A'
          - age_years < 40
          - preauth_initiated_time in [8..18)
          - daily count of such rows > (num_ot * num_surgeons * 30)
       2) Emergency prebooking:
-         - admission_type='E'
+         - admission_type = 'E'
          - procedure_details has 'cataract','oncology','dialysis'
       3) Family ID rule:
-         - more than 2 cases same day for the same family_id
-      4) daily admissions > bed_strength => all those cases for that day/hospital
+         - More than 2 cases on the same day for the same family_id
+      4) Daily admissions > bed_strength => all those cases for that day/hospital
     """
+    # Use consistent ordering to ensure same results every time
+    if district.lower() != "all" and district.strip() != "":
+        qs = Last24Hour.objects.filter(
+            hospital_type="P", district_name__iexact=district
+        ).order_by("id").values()
+    else:
+        qs = Last24Hour.objects.filter(
+            hospital_type="P"
+        ).order_by("id").values()
 
-    qs = Last24Hour.objects.all().values()
     df = pd.DataFrame(qs)
     if df.empty:
         return df
 
-    if 'hospital_type' not in df.columns:
-        df['hospital_type'] = ''
-    else:
-        df['hospital_type'] = df['hospital_type'].fillna('').astype(str).str.strip().str.upper()
-
+    # Clean and filter hospital_type
+    df['hospital_type'] = df['hospital_type'].fillna('').astype(str).str.strip().str.upper()
     df = df[df['hospital_type'] == 'P']
     if df.empty:
         return df
 
+    # Process date and time fields
     if 'preauth_initiated_date' in df.columns:
         df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'], errors='coerce')
         df['preauth_initiated_date'] = df['preauth_initiated_date'].dt.tz_localize(None)
     df['date_only'] = df['preauth_initiated_date'].dt.date
 
     if 'preauth_initiated_time' in df.columns:
-        pass
-        # print(df['preauth_initiated_time'].head())
-    else:
-        print("Column 'Preauth Initiated Time' is missing!")
-
-    if 'preauth_initiated_time' in df.columns:
         df['preauth_initiated_time'] = df['preauth_initiated_time'].astype(str).str.strip()
-        
-        print("Raw time values:", df['preauth_initiated_time'].dropna().unique()[:5])
-        
         df['preauth_initiated_time_parsed'] = pd.to_datetime(
-            df['preauth_initiated_time'], 
-            format='%H:%M:%S',  # 24-hour format
-            errors='coerce'
+            df['preauth_initiated_time'], format='%H:%M:%S', errors='coerce'
         )
-
         df['hour'] = df['preauth_initiated_time_parsed'].dt.hour
-
-        print(df[['preauth_initiated_time', 'preauth_initiated_time_parsed', 'hour']].head(10))
-        print("Unique extracted hours:", df['hour'].dropna().unique())
-        print("Missing hour values:", df['hour'].isna().sum())
     else:
-        df['hour'] = None
-    
+        df['hour'] = df['preauth_initiated_date'].dt.hour
+
     if 'admission_type' in df.columns:
-        df['admission_type'] = df['admission_type'].fillna('').astype(str).str.upper()
+        df['admission_type'] = df['admission_type'].fillna('').astype(str).str.strip().str.upper()
     if 'procedure_details' in df.columns:
         df['procedure_details'] = df['procedure_details'].fillna('').astype(str).str.lower()
 
+    # Load bed strength info from HospitalBeds
     beds_qs = HospitalBeds.objects.all().values('hospital_id','bed_strength')
     bed_dict = {row['hospital_id'].upper(): row['bed_strength'] for row in beds_qs}
 
-    # Condition 4: daily admissions > bed_strength
-    daily_grp = df.groupby(['hospital_id','date_only']).size().reset_index(name='daily_admissions')
+    # Condition 4: Daily admissions > bed_strength
+    daily_grp = df.groupby(['hospital_id','date_only']).size().reset_index(name='daily_count')
     df = df.merge(daily_grp, on=['hospital_id','date_only'], how='left')
+    df['cond4'] = df.apply(lambda row: row['daily_count'] > bed_dict.get(str(row['hospital_id']).upper(), 0), axis=1)
 
-    def cond_bed_strength(row):
-        hosp_id = str(row['hospital_id']).upper()
-        b_strength = bed_dict.get(hosp_id, 0)
-        return row['daily_admissions'] > b_strength
-
-    df['cond4'] = df.apply(cond_bed_strength, axis=1)
-
-    # ----------------------
-    # Condition 1: Ophthalmology
-    # ----------------------
+    # Condition 1: Ophthalmology rules
     df['is_cataract'] = df['procedure_details'].str.contains('cataract', na=False)
     df['age_years'] = pd.to_numeric(df['age_years'], errors='coerce')
     df['cond1_part_a'] = False
-    df['cond1_part_b'] = False
-    df['cond1_part_c'] = False
+    df['cond1_part_b'] = df['is_cataract'] & df['hour'].between(8, 17)
+    df['cond1_part_c'] = df['is_cataract'] & (df['age_years'] < 40)
 
-    # Check if 'num_ot' and 'num_surgeons' are present
     if 'num_ot' in df.columns and 'num_surgeons' in df.columns:
-        # Count rows with cataract procedure
         cataract_df = df[df['is_cataract']]
         if not cataract_df.empty:
             grouped = cataract_df.groupby(['hospital_id', 'date_only'])
             cataract_counts = grouped.size().reset_index(name='cataract_daily_count')
             df = df.merge(cataract_counts, on=['hospital_id', 'date_only'], how='left')
             df['cataract_daily_count'] = df['cataract_daily_count'].fillna(0)
-
             df['threshold'] = df['num_ot'].fillna(0) * df['num_surgeons'].fillna(0) * 30
             df['cond1_part_a'] = df['is_cataract'] & (df['cataract_daily_count'] > df['threshold'])
 
-    df['cond1_part_b'] = df['is_cataract'] & df['hour'].between(8, 17)
-    df['cond1_part_c'] = df['is_cataract'] & (df['age_years'] < 40)
-
+    # Combine Rule 1 parts using AND logic
     df['cond1'] = df['cond1_part_a'] & df['cond1_part_b'] & df['cond1_part_c']
+    df.loc[df[df['cond1']].index, 'is_unusual'] = True
 
     # Condition 2: Emergency prebooking
-    def cond_emergency_prebooking(row):
-        if row['admission_type'] != 'E':
-            return False
-        text = row['procedure_details']
-        return any(k in text for k in ['cataract','oncology','dialysis'])
-
-    df['cond2'] = df.apply(cond_emergency_prebooking, axis=1)
+    df['cond2'] = df.apply(lambda row: (row['admission_type'] == 'E') and 
+                           any(k in row['procedure_details'] for k in ['cataract','oncology','dialysis']),
+                           axis=1)
+    df.loc[df[df['cond2']].index, 'is_unusual'] = True
 
     # Condition 3: Family ID rule
     if 'family_id' not in df.columns:
         df['family_id'] = ''
-    fam_grp = df.groupby(['family_id','date_only']).size().reset_index(name='fam_count')
-    df = df.merge(fam_grp, on=['family_id','date_only'], how='left')
+    grp_fam = df.groupby(['family_id','date_only']).size().reset_index(name='fam_count')
+    df = df.merge(grp_fam, on=['family_id','date_only'], how='left')
     df['cond3'] = df['fam_count'] > 2
+    df.loc[df[df['cond3']].index, 'is_unusual'] = True
 
+    # Overall unusual treatment: OR of all conditions
     df['is_unusual'] = df['cond1'] | df['cond2'] | df['cond3'] | df['cond4']
-
     df_unusual = df[df['is_unusual'] == True].copy()
     return df_unusual
 
@@ -642,5 +830,3 @@ def download_unusual_treatment_excel(request):
     )
     response['Content-Disposition'] = 'attachment; filename="Unusual_Treatment_Patterns.xlsx"'
     return response
-
-

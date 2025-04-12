@@ -23384,8 +23384,9 @@ footer .vertical-divider {
 /* Modal Content styling */
 .modal-content {
   background: #fff;
-  width: 80%;
-  max-width: 600px;
+  width: 92%;
+  max-width: 1500px;
+  min-height: 700px;
   padding: 20px;
   border-radius: 8px;
   position: relative;
@@ -23409,3 +23410,47 @@ footer .vertical-divider {
   margin-top: 40px; /* Ensure space for the close button */
 }
 
+.dashboard {
+  display: flex;
+  gap: 20px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.card-header {
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #333;
+}
+.card-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #2c3e50;
+}
+/* Ophthalmology Container */
+.ophthalmology-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8f9fb;
+  padding: 15px;
+  border-radius: 8px;
+}
+.sub-card {
+  background: white;
+  padding: 12px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}

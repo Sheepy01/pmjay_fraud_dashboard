@@ -1,0 +1,508 @@
+(function($) {
+  'use strict';
+  $(document).ready(function() {
+
+    function openModal(cardTitle) {
+      $('#modal-overlay').fadeIn(300);
+      if (cardTitle === "Number of Flagged Claims") {
+        $('#modal-overlay .modal-body h2').text("Number of Flagged Claims Charts");
+        drawFlaggedClaimsChart("all");
+      }
+      else if (cardTitle === "Geographic Anomalies") {
+        $('#modal-overlay .modal-body h2').text("Geographic Anomalies Charts");
+        drawGeoAnomaliesChart("all");
+      }
+    }
+
+    function drawFlaggedClaimsChart(district = "all") {
+      $.ajax({
+        url: `/chart-data/flagged-claims/?district=${district}`,
+        method: 'GET',
+        success: function (data) {
+          const ctx = document.getElementById('barChart').getContext('2d');
+          if (window.flaggedClaimsChart) {
+            window.flaggedClaimsChart.destroy();
+          }
+          window.flaggedClaimsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: data.labels,
+              datasets: [{
+                label: 'Flagged Claims',
+                data: data.values,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+              }]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              scales: {
+                x: { beginAtZero: true }
+              }
+            }
+          });
+        },
+        error: function(error) {
+          console.error("Error drawing chart:", error);
+        }
+      });
+    }
+
+    function drawGeoAnomaliesChart(district = "all") {
+      $.ajax({
+        url: `/chart-data/geo-anomalies/?district=${district}`,
+        method: 'GET',
+        success: function(data) {
+          const ctx = document.getElementById('barChart').getContext('2d');
+          if (window.geoAnomaliesChart) {
+            window.geoAnomaliesChart.destroy();
+          }
+          window.geoAnomaliesChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: data.labels,
+              datasets: [{
+                label: 'Geographic Anomalies',
+                data: data.values,
+                backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                borderColor: 'rgba(255, 159, 64, 1)',
+                borderWidth: 1
+              }]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              scales: {
+                x: { beginAtZero: true }
+              }
+            }
+          });
+        },
+        error: function(err) {
+          console.error("Error drawing geo anomalies chart:", err);
+        }
+      });
+    }
+
+    function closeModal() {
+      $('#modal-overlay').fadeOut(300);
+    }
+
+    // Example: Attach click event to card elements with class .card
+    $('.card').on('click', function(e) {
+      e.stopPropagation();
+      const cardTitle = $(this).find('.card-title').text().trim();
+      console.log("Card clicked:", cardTitle);
+      openModal(cardTitle);
+    });
+
+    $('#modal-close').on('click', function() {
+      closeModal();
+    });
+
+    $('#modal-overlay').on('click', function(e) {
+      if ($(e.target).is('#modal-overlay')) {
+        closeModal();
+      }
+    });
+
+    // ===========================
+    // District Dropdown
+    // ===========================
+    $.ajax({
+      url: "/get-districts/",
+      method: "GET",
+      success: function(response) {
+        var districts = response.districts;
+        var dropdown = $('#districtDropdown');
+        districts.forEach(function(d) {
+          dropdown.append('<option value="' + d + '">' + d + '</option>');
+        });
+      }
+    });
+
+    $('#districtDropdown').on('change', function() {
+      var selectedDistrict = $(this).val();
+      $.ajax({
+        url: '/filter-dashboard/',
+        method: 'GET',
+        data: { district: selectedDistrict },
+        success: function(response) {
+          // Flagged Claims
+          $('#flagged-overall').text(response.flagged_claims_overall);
+          $('#flagged-last30').text(response.flagged_claims_last_30_days);
+          $('#flagged-yesterday').text(response.flagged_claims_yesterday);
+          
+          // High Value Surgical Claims
+          $('#surgical-overall').text(response.surgical_overall);
+          $('#surgical-last30').text(response.surgical_last_30_days);
+          $('#surgical-yesterday').text(response.surgical_yesterday);
+          
+          // High Value Medical Claims
+          $('#medical-overall').text(response.medical_overall);
+          $('#medical-last30').text(response.medical_last_30_days);
+          $('#medical-yesterday').text(response.medical_yesterday);
+          
+          // Geographic Anomalies
+          $('#geo-overall').text(response.geo_anomaly_overall);
+          $('#geo-last30').text(response.geo_anomaly_last_30_days);
+          $('#geo-yesterday').text(response.geo_anomaly_yesterday);
+          
+          // Unusual Treatment Patterns (Main Card)
+          $('#unusual-overall').text(response.unusual_overall);
+          $('#unusual-last30').text(response.unusual_last_30_days);
+          $('#unusual-yesterday').text(response.unusual_yesterday);
+          
+          // Individual Unusual Rule Cards
+          $('#ot-violation-overall').text(response.ot_violations);
+          $('#preauth-timing-count').text(response.preauth_timing_issues);
+          $('#under-40-cataract-count').text(response.under_40_cataracts);
+          $('#emergency-case-count').text(response.emergency_cases);
+          $('#same-day-claims-count').text(response.same_day_claims);
+        }
+      });
+    });
+    
+    // ... other code ...
+  });
+
+})(jQuery);
+
+// (function($) {
+//     'use strict'; 
+//     $(function() {
+
+//     //Revenue Chart
+//     if ($("#revenue-chart").length) {
+//         var revenueChartCanvas = $("#revenue-chart").get(0).getContext("2d");
+
+//         var revenueChart = new Chart(revenueChartCanvas, {
+//             type: 'bar',
+//             data: {
+//             labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+//             datasets: [{
+//                 data: [105, 195, 290, 320, 400, 100, 290],
+//                 backgroundColor: ["rgba(255, 86, 48, 0.3)", "rgba(255, 86, 48, 0.3)", "rgba(255, 86, 48, 0.3)", "rgb(255, 86, 48)", "rgba(255, 86, 48, 0.3)", "rgba(255, 86, 48, 0.3)", "rgba(255, 86, 48, 0.3)"],
+//                 }
+//             ]
+//             },
+//             options: {
+//             responsive: true,
+//             maintainAspectRatio: false,
+//             scales: {
+//                 yAxes: [{
+//                 gridLines: {
+//                     drawBorder: false,
+//                     zeroLineColor: "rgba(0, 0, 0, 0.09)",
+//                     color: "rgba(0, 0, 0, 0.09)"
+//                 },
+//                 ticks: {
+//                     fontColor: '#bababa',
+//                     min:0,
+//                     stepSize: 100,
+//                 }
+//                 }],
+//                 xAxes: [{
+//                 ticks: {
+//                     fontColor: '#bababa',
+//                     beginAtZero: true
+//                 },
+//                 gridLines: {
+//                     display: false,
+//                     drawBorder: false
+//                 },
+//                 barPercentage: 0.4
+//                 }]
+//             },
+//             legend: {
+//                 display: false
+//             }
+//             }
+//         });
+//     }
+
+//     //Sales Chart
+//     if ($("#chart-sales").length) {
+//         var salesChartCanvas = $("#chart-sales").get(0).getContext("2d");
+//         var gradient1 = salesChartCanvas.createLinearGradient(0, 0, 0, 230);
+//         gradient1.addColorStop(0, '#55d1e8');
+//         gradient1.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+//         var gradient2 = salesChartCanvas.createLinearGradient(0, 0, 0, 160);
+//         gradient2.addColorStop(0, '#1bbd88');
+//         gradient2.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+//         var salesChart = new Chart(salesChartCanvas, {
+//           type: 'line',
+//           data: {
+//             labels: ["2am", "4am", "6am", "8am", "10am", "12am"],
+//             datasets: [{
+//                 data: [80, 115, 115, 150, 130, 160],
+//                 backgroundColor: gradient1,
+//                 borderColor: [
+//                   '#08bdde'
+//                 ],
+//                 borderWidth: 2,
+//                 pointBorderColor: "#08bdde",
+//                 pointBorderWidth: 4,
+//                 pointRadius: 1,
+//                 fill: 'origin',
+//               },
+//               {
+//                 data: [250, 310, 270, 330, 270, 380],
+//                 backgroundColor: gradient2,
+//                 borderColor: [
+//                   '#00b67a'
+//                 ],
+//                 borderWidth: 2,
+//                 pointBorderColor: "#00b67a",
+//                 pointBorderWidth: 4,
+//                 pointRadius: 1,
+//                 fill: 'origin',
+//               }
+//             ]
+//           },
+//           options: {
+//             responsive: true,
+//             maintainAspectRatio: true,
+//             plugins: {
+//               filler: {
+//                 propagate: false
+//               }
+//             },
+//             scales: {
+//               xAxes: [{
+//                 ticks: {
+//                   fontColor: "#bababa"
+//                 },
+//                 gridLines: {
+//                   display: false,
+//                   drawBorder: false
+//                 }
+//               }],
+//               yAxes: [{
+//                 ticks: {
+//                   fontColor: "#bababa",
+//                   stepSize: 100,
+//                   min: 0,
+//                   max: 500
+//                 },
+//                 gridLines: {
+//                   drawBorder: false,
+//                   color: "rgba(101, 103, 119, 0.21)",
+//                   zeroLineColor: "rgba(101, 103, 119, 0.21)"
+//                 }
+//               }]
+//             },
+//             legend: {
+//               display: false
+//             },
+//             tooltips: {
+//               enabled: true
+//             },
+//             elements: {
+//                 line: {
+//                     tension: 0
+//                 }
+//             },
+//             legendCallback : function(chart) {
+//               var text = [];
+//               text.push('<div>');
+//               text.push('<div class="d-flex align-items-center">');
+//               text.push('<span class="bullet-rounded" style="border-color: ' + chart.data.datasets[1].borderColor[0] +' "></span>');
+//               text.push('<p class="tx-12 text-muted mb-0 ml-2">Gross volume</p>');
+//               text.push('</div>');
+//               text.push('<div class="d-flex align-items-center">');
+//               text.push('<span class="bullet-rounded" style="border-color: ' + chart.data.datasets[0].borderColor[0] +' "></span>');
+//               text.push('<p class="tx-12 text-muted mb-0 ml-2">New Cusromers</p>');
+//               text.push('</div>');
+//               text.push('</div>');
+//               return text.join('');
+//             },
+//           }
+//         });
+//       document.getElementById('sales-legend').innerHTML = salesChart.generateLegend();
+//     }
+    
+//     //Impressions Chart
+//     if ($("#impressions-chart").length) {
+//         var impressionsChartCanvas = $("#impressions-chart").get(0).getContext("2d");
+//         var impressionChart = new Chart(impressionsChartCanvas, {
+//           type: 'line',
+//           data: {
+//             labels: ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept",],
+//             datasets: [{
+//                 data: [47, 33, 33, 24, 40, 30, 26, 30, 39],
+//                 fill: false,
+//                 borderColor: [
+//                   '#ffffff'
+//                 ],
+//                 borderWidth: 1,
+//                 pointBorderColor: "#ffffff",
+//                 pointBorderWidth: 5,
+//                 pointRadius: [1, 0, 0, 0, 0, 0, 0, 0, 1],
+//                 label: "online"
+//               }
+//             ]
+//           },
+//           options: {
+//             responsive: true,
+//             maintainAspectRatio: true,
+//             layout: {
+//               padding: {
+//                 left: 0,
+//                 right: 10,
+//                 top: 0,
+//                 bottom: 0
+//               }
+//             },
+//             plugins: {
+//               filler: {
+//                 propagate: false
+//               }
+//             },
+//             scales: {
+//               xAxes: [{
+//                 ticks: {
+//                   display: false,
+//                   fontColor: "#6c7293"
+//                 },
+//                 gridLines: {
+//                 display: false,
+//                 drawBorder: false,
+//                   color: "rgba(101, 103, 119, 0.21)"
+//                 }
+//               }],
+//               yAxes: [{
+//                 ticks: {
+//                   display: false,
+//                   fontColor: "#6c7293",
+//                 },
+//                 gridLines: {
+//                   display: false,
+//                   drawBorder: false,
+//                   color: "rgba(101, 103, 119, 0.21)"
+//                 }
+//               }]
+//             },
+//             legend: {
+//               display: false
+//             },
+//             tooltips: {
+//               enabled: true
+//             },
+//             elements: {
+//                 line: {
+//                     tension: 0
+//                 }
+//             }
+//           }
+//         });
+//     }
+    
+//     //Traffic Chart
+//     if ($("#traffic-chart").length) {
+//       var trafficChartCanvas = $("#traffic-chart").get(0).getContext("2d");
+//       var trafficChart = new Chart(trafficChartCanvas, {
+//         type: 'line',
+//         data: {
+//           labels: ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept",],
+//           datasets: [{
+//               data: [47, 33, 33, 24, 40, 30, 26, 30, 39],
+//               fill: false,
+//               borderColor: [
+//                 '#ffffff'
+//               ],
+//               borderWidth: 1,
+//               pointBorderColor: "#ffffff",
+//               pointBorderWidth: 5,
+//               pointRadius: [1, 0, 0, 0, 0, 0, 0, 0, 1],
+//               label: "online"
+//             }
+//           ]
+//         },
+//         options: {
+//           responsive: true,
+//           maintainAspectRatio: true,
+//           layout: {
+//             padding: {
+//               left: 0,
+//               right: 10,
+//               top: 0,
+//               bottom: 0
+//             }
+//           },
+//           plugins: {
+//             filler: {
+//               propagate: false
+//             }
+//           },
+//           scales: {
+//             xAxes: [{
+//               ticks: {
+//                 display: false,
+//                 fontColor: "#6c7293"
+//               },
+//               gridLines: {
+//               display: false,
+//               drawBorder: false,
+//                 color: "rgba(101, 103, 119, 0.21)"
+//               }
+//             }],
+//             yAxes: [{
+//               ticks: {
+//                 display: false,
+//                 fontColor: "#6c7293",
+//               },
+//               gridLines: {
+//                 display: false,
+//                 drawBorder: false,
+//                 color: "rgba(101, 103, 119, 0.21)"
+//               }
+//             }]
+//           },
+//           legend: {
+//             display: false
+//           },
+//           tooltips: {
+//             enabled: true
+//           },
+//           elements: {
+//               line: {
+//                   tension: 0
+//               }
+//           }
+//         }
+//       });
+//     }
+
+//     if($('#revenue-map').length) {
+//       $('#revenue-map').vectorMap({
+//         map: 'world_mill_en',
+//         backgroundColor: 'transparent',
+//         zoomButtons : false,
+//         panOnDrag: true,
+//         focusOn: {
+//           x: 0.5,
+//           y: 0.5,
+//           scale: 1,
+//           animate: true
+//         },
+//         regionStyle: {
+//           initial: {
+//             fill: '#00bbdd'
+//           },
+//           hover: {
+//               fill: "#006c80"
+//             }
+//         }
+//       });
+//     }
+
+//     });
+// })(jQuery);
+
+
+
