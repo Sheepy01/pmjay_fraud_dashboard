@@ -5,6 +5,7 @@ from django.db.models.functions import TruncDate
 from django.utils.timezone import now, timedelta
 from django.http import JsonResponse
 from datetime import timedelta
+from django.db.models import Case, When, Value, CharField
 from .models import Last24Hour, SuspiciousHospital, HospitalBeds
 
 class Upper(Func):
@@ -45,6 +46,38 @@ def get_flagged_claims(request):
     }
     
     return JsonResponse(data)
+
+def get_flagged_claims_details(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    # Prefetch hospital names in one query
+    hospital_names = {
+        h.hospital_id: h.hospital_name 
+        for h in SuspiciousHospital.objects.all()
+    }
+    
+    flagged_cases = Last24Hour.objects.filter(
+        hospital_id__in=hospital_names.keys(),
+        hospital_type='P'
+    )
+    
+    if districts:
+        flagged_cases = flagged_cases.filter(district_name__in=districts)
+    
+    data = []
+    for idx, case in enumerate(flagged_cases[:500], 1):
+        data.append({
+            'serial_no': idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}" or 'N/A',
+            'hospital_name': hospital_names.get(case.hospital_id, case.hospital_name or 'N/A'),
+            'district_name': case.district_name or 'N/A',
+            'amount': case.claim_initiated_amount or 0,
+            'reason': 'Suspicious hospital'
+        })
+    
+    return JsonResponse(data, safe=False)
 
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
@@ -423,7 +456,7 @@ def get_ophthalmology_cases(request):
             'total': preauth_total,
             'yesterday': apply_time_filter(preauth_violations, yesterday).count(),
             'last_30_days': apply_time_filter(preauth_violations, thirty_days_ago).count(),
-            'avg_violation_hours': "N/A"  # Can implement if needed
+            'avg_violation_hours': "N/A" 
         }
     }
     

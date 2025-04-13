@@ -5,12 +5,25 @@ $(document).ready(function() {
     $('#toggle-btn').on('click', function() {
         $('#sidebar').toggleClass('collapsed');
         $('#main-content').toggleClass('expanded');
+        updateModalPosition();
         localStorage.setItem('sidebarCollapsed', $('#sidebar').hasClass('collapsed'));
     });
 
+    // Add this to handle modal repositioning
     if (localStorage.getItem('sidebarCollapsed') === 'true') {
         $('#sidebar').addClass('collapsed');
         $('#main-content').addClass('expanded');
+        $('.modal-overlay').css('left', '0');
+    } else {
+        $('.modal-overlay').css('left', '250px');
+    }
+
+    function updateModalPosition() {
+        if ($('#sidebar').hasClass('collapsed')) {
+            $('.modal-overlay').css('left', '0');
+        } else {
+            $('.modal-overlay').css('left', '250px');
+        }
     }
 
     // ======================
@@ -353,20 +366,69 @@ $(document).ready(function() {
     // ======================
     const cardTemplates = {
         'flagged-claims': {
-            title: "Flagged Claims Analysis",
-            content: `<div class="card-details">
-                        <h4>Flagged Claims Analysis</h4>
-                        <div class="data-grid">
-                            <div class="data-item">
-                                <span class="data-label">Total Flagged:</span>
-                                <span class="data-value">1,248</span>
-                            </div>
-                            <div class="data-item">
-                                <span class="data-label">High Risk:</span>
-                                <span class="data-value">328</span>
-                            </div>
-                        </div>
-                      </div>`
+            title: "Flagged Claims Details",
+            content: `
+                <div class="data-table-container">
+                    <button class="table-download-btn">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Claim ID</th>
+                                <th>Patient</th>
+                                <th>Hospital</th>
+                                <th>District</th>
+                                <th>Amount (₹)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="flaggedClaimsData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        Showing <span id="rowCount">0</span> records
+                    </div>
+                </div>
+            `,
+            postRender: function(districts) {
+                const url = '/get-flagged-claims-details/' + 
+                        (districts.length ? `?district=${districts.join(',')}` : '');
+                
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        return response.json();
+                    })
+                    .then(data => {
+                        const tableBody = document.getElementById('flaggedClaimsData');
+                        tableBody.innerHTML = data.map(item => `
+                            <tr>
+                                <td>${item.serial_no}</td>
+                                <td>${item.claim_id}</td>
+                                <td>${item.patient_name}</td>
+                                <td>${item.hospital_name}</td>
+                                <td>${item.district_name}</td>
+                                <td>₹${item.amount.toLocaleString('en-IN')}</td>
+                                <td><span class="status-badge ${item.reason === 'Suspicious hospital' ? 'danger' : 'warning'}">
+                                    ${item.reason}
+                                </span></td>
+                            </tr>
+                        `).join('');
+                        
+                        document.getElementById('rowCount').textContent = data.length;
+                    })
+                    .catch(error => {
+                        console.error('Error loading flagged claims:', error);
+                        document.getElementById('flaggedClaimsData').innerHTML = `
+                            <tr>
+                                <td colspan="7" class="error-message">
+                                    Failed to load data. Please try again.
+                                </td>
+                            </tr>
+                        `;
+                    });
+            }
         },
         'high-value': {
             title: "High Value Claims",
@@ -457,26 +519,27 @@ $(document).ready(function() {
             $(document)
                 .off('click', '.card')
                 .off('click', '.modal-close')
-                .off('click', '.modal-overlay');
+                .off('click', '.modal-overlay')
+                .off('click', '.modal-pdf-download')
+                .off('click', '.table-download-btn');
             
             // Card click handler
             $(document).on('click', '.card', function(e) {
                 if ($(e.target).is('.download-btn, .download-btn *')) return;
                 const cardId = $(this).attr('class').split(' ')[1];
-                ModalController.open(cardId);
+                const districts = getSelectedDistricts(); // Get current district filters
+                ModalController.open(cardId, districts);
             });
             
-            // Close button handler - more specific targeting
+            // Close button handler
             $(document).on('click', '.modal-close', function(e) {
-                e.stopPropagation(); // Prevent event from reaching overlay
+                e.stopPropagation();
                 ModalController.close();
             });
             
             // Overlay click handler
             $(document).on('click', '.modal-overlay', function(e) {
-                if (e.target === this) { // Only if clicking directly on overlay
-                    ModalController.close();
-                }
+                if (e.target === this) ModalController.close();
             });
             
             // ESC key handler
@@ -487,7 +550,7 @@ $(document).ready(function() {
             });
         },
         
-        open: function(cardId) {
+        open: function(cardId, districts = []) {
             const template = cardTemplates[cardId] || {
                 title: "Details",
                 content: `<div class="card-details"><p>Content not available</p></div>`
@@ -504,8 +567,23 @@ $(document).ready(function() {
             $('#modalOverlay').fadeIn(200);
             $('body').css('overflow', 'hidden');
             
+            // Load content after short delay (for spinner visibility)
             setTimeout(() => {
                 $('#modalContent').html(template.content);
+                
+                // If template has postRender, execute it with districts
+                if (template.postRender) {
+                    template.postRender(districts);
+                }
+                
+                // Set up download button handlers
+                $('.modal-pdf-download').click(function() {
+                    generatePDFReport(cardId, districts);
+                });
+                
+                $('.table-download-btn').click(function() {
+                    exportTableToCSV(cardId);
+                });
             }, 300);
         },
         
@@ -515,7 +593,14 @@ $(document).ready(function() {
         }
     };
     
-    // Initialize
+    // Helper function to get selected districts
+    function getSelectedDistricts() {
+        return $('.district-checkbox:checked:not(#selectAll)').map(function() {
+            return $(this).val();
+        }).get();
+    }
+    
+    // Initialize on load
     $(window).on('load', function() {
         $('#modalOverlay').hide().removeClass('show');
         ModalController.init();

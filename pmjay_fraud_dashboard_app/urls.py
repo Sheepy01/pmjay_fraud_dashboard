@@ -26,4 +26,5 @@ urlpatterns = [
     path('get-family-id-cases/', views.get_family_id_cases, name='family_id_cases'),
     path('get-geo-anomalies/', views.get_geo_anomalies, name='get_geo_anomalies'),
     path('get-ophthalmology-cases/', views.get_ophthalmology_cases, name='get_ophthalmology_cases'),
+    path('get-flagged-claims-details/', views.get_flagged_claims_details, name='get_flagged_claims_details'),
 ]

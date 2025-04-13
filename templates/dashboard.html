@@ -337,19 +337,33 @@
     <!-- Modal Template -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal-container">
-        <!-- Centered Close Button -->
-        <button class="modal-close">
-            <span class="close-icon">✕</span>
-        </button>
-        <!-- Dynamic Content -->
-        <div class="modal-header">
-            <h3 id="modalTitle"></h3>
-        </div>
-        <div class="modal-content" id="modalContent"></div>
+            <!-- Top-right PDF Download Button -->
+            <button class="modal-pdf-download">
+                <i class="fas fa-file-pdf"></i> Download PDF Report
+            </button>
+            <!-- Centered Close Button -->
+            <button class="modal-close">
+                <span class="close-icon">✕</span>
+            </button>
+            <!-- Dynamic Content -->
+            <div class="modal-header">
+                <h3 id="modalTitle"></h3>
+            </div>
+            <div class="modal-content" id="modalContent">
+                <!-- Dynamic content will be inserted here -->
+                <div class="card-details-container" id="cardDetails">
+                    <!-- Will contain either:
+                        1. Chart containers when we implement visualizations
+                        2. Current text content from cardTemplates
+                    -->
+                </div>
+            </div>
         </div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="{% static 'js/dashboard.js' %}"></script>
+    <script src="{% static 'js/lib/chart.min.js' %}"></script>
+    <script src="{% static 'js/charts.js' %}"></script>
 </body>
 </html>

@@ -31,6 +31,10 @@ body {
     width: 0;
 }
 
+.sidebar.collapsed ~ .main-content .modal-overlay {
+    left: 0;
+}
+
 .sidebar-header {
     padding: 20px;
     background-color: #1a252f;
@@ -726,7 +730,7 @@ white-space: nowrap;
 .modal-overlay {
     position: fixed;
     top: 0;
-    left: 250px; /* Sidebar width */
+    left: 250px; /* Initial sidebar width */
     right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
@@ -734,15 +738,17 @@ white-space: nowrap;
     z-index: 1000;
     justify-content: center;
     align-items: center;
-    padding: 20px; /* Prevents touching edges */
+    padding: 20px;
+    transition: left 0.3s ease; /* Add transition for smooth movement */
 }
   
 /* Modal Container - Centered with Fixed Size */
 .modal-container {
-    width: 100%; /* Relative to content area */
-    max-width: 1250px;
+    width: calc(100% - 40px); /* Relative to content area */
+    max-width: 1400px;
     height: 95vh;
     max-height: 1250px;
+    margin: 0 auto;
     background-color: white;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
@@ -822,6 +828,11 @@ white-space: nowrap;
         left: 0;
         padding-left: 250px;
     }
+
+    /* Add this for collapsed state on medium screens */
+    .sidebar.collapsed ~ .main-content .modal-overlay {
+        padding-left: 0;
+    }
 }
 
 @media (max-width: 768px) {
@@ -832,4 +843,123 @@ white-space: nowrap;
         width: 95%;
         height: 90vh;
     }
+}
+
+.card-details-container {
+    padding: 20px;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+}
+
+/* Ready for future charts */
+.chart-ready .card-details-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* PDF Download Button */
+.modal-pdf-download {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(231, 76, 60, 0.3);
+    z-index: 10;
+    transition: all 0.2s ease;
+}
+
+.modal-pdf-download:hover {
+    background: #c0392b;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(231, 76, 60, 0.4);
+}
+
+.modal-pdf-download i {
+    margin-right: 5px;
+}
+
+/* Flagged Claims Table */
+.data-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 15px;
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.data-table th {
+    position: sticky;
+    top: 0;
+    background: #2c3e50;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+}
+
+.data-table td {
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.data-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.data-table tr:hover {
+    background-color: #f1f1f1;
+}
+
+.table-download-btn {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.table-download-btn:hover {
+    background: #2980b9;
+}
+
+/* Add to your styles.css */
+.table-footer {
+    padding: 10px;
+    background: #f8f9fa;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #6c757d;
+    border-top: 1px solid #dee2e6;
+}
+
+.status-badge {
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-badge.danger {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-badge.warning {
+    background: #fff3cd;
+    color: #856404;
 }

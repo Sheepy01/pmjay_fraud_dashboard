@@ -100,7 +100,9 @@ class Command(BaseCommand):
                         age_years=str(row['Age(Years)']).strip(),
                         preauth_initiated_time = str(row['Preauth Initiated Time']).strip(),
                         procedure_code = str(row['Procedure Code']).strip(),
-                        district_name = str(row['District Name']).strip()
+                        district_name = str(row['District Name']).strip(),
+                        patient_name = str(row['Patient Name']).strip(),
+                        registration_id = str(row['Registration Id']).strip(),
                     )
                 )
             Last24Hour.objects.bulk_create(l24_instances, ignore_conflicts=True)
