@@ -490,6 +490,11 @@ body {
     padding-top: 0; /* Let header handle top padding */
 }
 
+.high-value .card-value { font-size: 2rem; }
+.high-value .time-metric { margin: 5px 0; }
+.high-value .time-label { font-weight: bold; }
+.high-value .time-value { float: right; }
+
 /* Mini-map placeholder */
 .card-map {
     height: 120px;

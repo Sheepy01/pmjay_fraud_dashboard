@@ -98,30 +98,39 @@ $(document).ready(function() {
             });
         });
         
-        // District checkbox selection
+        // District checkbox selection - UPDATED VERSION
         $(document).on('change', '.district-checkbox:not(#selectAll)', function() {
             const district = $(this).val();
             const hiddenOption = $('#districtDropdown option[value="' + district + '"]');
             
             if ($(this).is(':checked')) {
                 hiddenOption.prop('selected', true);
-                // Uncheck "All Districts" if a specific district is selected
                 $('#selectAll').prop('checked', false);
             } else {
                 hiddenOption.prop('selected', false);
             }
             
             updateSelectedDisplay();
+            
+            // Get all selected districts
+            const selectedDistricts = $('.district-checkbox:checked:not(#selectAll)').map(function() {
+                return $(this).val();
+            }).get();
+            
+            // Trigger update - empty array means "All Districts"
+            updateFlaggedClaims(selectedDistricts);
+            updateHighValueClaims(selectedDistricts);
+            updateHospitalBedCases(selectedDistricts);
+            updateGeoAnomalies(selectedDistricts);
+            updateOphthalmology(selectedDistricts);
         });
         
-        // "All Districts" checkbox
+        // "All Districts" checkbox - UPDATED VERSION
         $(document).on('change', '#selectAll', function() {
             const isChecked = $(this).is(':checked');
             
-            // Toggle all district checkboxes
             $('.district-checkbox:not(#selectAll)').prop('checked', isChecked);
             
-            // Update hidden select
             if (isChecked) {
                 $('#districtDropdown option').prop('selected', false);
                 $('#districtDropdown option[value=""]').prop('selected', true);
@@ -130,11 +139,214 @@ $(document).ready(function() {
             }
             
             updateSelectedDisplay();
+            
+            // Trigger update with empty array for "All Districts"
+            updateFlaggedClaims(isChecked ? [] : null);
+            updateHighValueClaims(isChecked ? [] : null);
+            updateHospitalBedCases(isChecked ? [] : null);
+            updateFamilyIdCases(isChecked ? [] : null);
+            updateGeoAnomalies(isChecked ? [] : null);
+            updateOphthalmology(isChecked ? [] : null);
+        });
+    }
+    
+    loadDistricts();
+    initDistrictDropdown();
+
+    function updateFlaggedClaims(districts = []) {
+        // If null (All Districts unchecked), show empty state
+        if (districts === null) {
+            $('.flagged-claims .card-value').text('0');
+            $('.flagged-claims .time-value').text('0');
+            return;
+        }
+        
+        $.ajax({
+            url: '/get-flagged-claims/',
+            method: 'GET',
+            data: { 
+                district: districts.length > 0 ? districts.join(',') : ''
+            },
+            beforeSend: function() {
+                $('.flagged-claims .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
+            success: function(response) {
+                $('.flagged-claims .card-value').text(response.total.toLocaleString());
+                $('.flagged-claims .time-metric:nth-child(1) .time-value').text(response.total.toLocaleString());
+                $('.flagged-claims .time-metric:nth-child(2) .time-value').text(response.yesterday.toLocaleString());
+                $('.flagged-claims .time-metric:nth-child(3) .time-value').text(response.last_30_days.toLocaleString());
+            },
+            error: function(xhr, status, error) {
+                console.error('Error fetching flagged claims:', error);
+                $('.flagged-claims .card-value').text('Error');
+            }
         });
     }
 
-    loadDistricts();
-    initDistrictDropdown();
+    function updateHighValueClaims(districts = []) {
+        // If null (All Districts unchecked), show empty state
+        if (districts === null) {
+            $('.high-value .card-value').text('0');
+            $('.high-value .time-value').text('0');
+            return;
+        }
+    
+        $.ajax({
+            url: '/get-high-value-claims/',
+            method: 'GET',
+            data: { district: districts.join(',') },
+            success: function(response) {
+                // console.log("Full Response:", response);
+                
+                // 1. Update Main Card
+                $('.high-value .card-value').text(response.total_count.toLocaleString());
+                
+                // 2. Update Surgical Section - more precise selectors
+                $('.high-value .surgical .time-metric:eq(0) .time-value').text(response.surgical.count.toLocaleString());
+                $('.high-value .surgical .time-metric:eq(1) .time-value').text(response.surgical.yesterday.toLocaleString());
+                $('.high-value .surgical .time-metric:eq(2) .time-value').text(response.surgical.last_30_days.toLocaleString());
+                
+                // 3. Update Medical Section - more precise selectors
+                $('.high-value .medical .time-metric:eq(0) .time-value').text(response.medical.count.toLocaleString());
+                $('.high-value .medical .time-metric:eq(1) .time-value').text(response.medical.yesterday.toLocaleString());
+                $('.high-value .medical .time-metric:eq(2) .time-value').text(response.medical.last_30_days.toLocaleString());
+                
+                // Debug verification
+                // console.log("Surgical value set to:", response.surgical.count);
+                // console.log("Medical value set to:", response.medical.count);
+            },
+            error: function(xhr, status, error) {
+                console.error("Error:", error);
+                $('.high-value .card-value').text('Error');
+            }
+        });
+    }
+
+    function updateHospitalBedCases(districts = []) {
+        // $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+        
+        $.ajax({
+            url: '/get-hospital-bed-cases/',
+            method: 'GET',
+            data: { district: districts.join(',') },
+            success: function(response) {
+                // Update main card
+                $('.hospital-beds .card-value').text(response.total.toLocaleString());
+                
+                // Update hover content
+                $('.hospital-beds .time-metric:nth-child(1) .time-value').text(response.total.toLocaleString());
+                $('.hospital-beds .time-metric:nth-child(2) .time-value').text(response.yesterday.toLocaleString());
+                $('.hospital-beds .time-metric:nth-child(3) .time-value').text(response.last_30_days.toLocaleString());
+                
+                // Update violation details (for modal or tooltip)
+                if (response.violations_today && response.violations_today.length > 0) {
+                    const violationsHtml = response.violations_today.map(v => `
+                        <div class="violation-item">
+                            <strong>${v.hospital}</strong>:
+                            ${v.admissions} admissions (Capacity: ${v.bed_strength})
+                        </div>
+                    `).join('');
+                    $('.hospital-beds .violations-container').html(violationsHtml);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error("Error fetching bed cases:", error);
+                $('.hospital-beds .card-value').text('Error');
+            }
+        });
+    }
+
+    function updateFamilyIdCases(districts = []) {
+        $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+        
+        $.ajax({
+            url: '/get-family-id-cases/',
+            method: 'GET',
+            data: { district: districts.join(',') },
+            success: function(response) {
+                // Update main card
+                $('.family-id .card-value').text(response.total.toLocaleString());
+                
+                // Update hover content
+                $('.family-id .time-metric:nth-child(1) .time-value').text(response.total.toLocaleString());
+                $('.family-id .time-metric:nth-child(2) .time-value').text(response.yesterday.toLocaleString());
+                $('.family-id .time-metric:nth-child(3) .time-value').text(response.last_30_days.toLocaleString());
+                
+                // Update violation details
+                if (response.violations.length > 0) {
+                    const violationsHtml = response.violations.map(v => `
+                        <div class="violation-item">
+                            <strong>Family ${v.family_id}</strong>:
+                            ${v.count} claims on ${v.date} across
+                            ${v.hospitals.length} hospitals
+                        </div>
+                    `).join('');
+                    $('.family-id .violations-container').html(violationsHtml);
+                }
+            }
+        });
+    }
+
+    function updateGeoAnomalies(districts = []) {
+        $.ajax({
+            url: '/get-geo-anomalies/',
+            data: { district: districts.join(',') },
+            success: function(response) {
+                $('.geo-anomalies .card-value').text(response.total.toLocaleString());
+                $('.geo-anomalies .time-metric:nth-child(1) .time-value').text(response.total.toLocaleString());
+                $('.geo-anomalies .time-metric:nth-child(2) .time-value').text(response.yesterday.toLocaleString());
+                $('.geo-anomalies .time-metric:nth-child(3) .time-value').text(response.last_30_days.toLocaleString());
+                // Update other elements similarly
+            }
+        });
+    }
+
+    function updateOphthalmology(districts = []) {
+        $.ajax({
+            url: '/get-ophthalmology-cases/',
+            data: { district: districts.join(',') },
+            success: function(response) {
+                // Main card
+                $('.ophthalmology .card-value').text(response.total.toLocaleString());
+                
+                // Sub-cards
+                $('.sub-card.age .card-value').text(response.age_under_40.total);
+                $('.sub-card.age .time-metric:nth-child(1) .time-value').text(response.age_under_40.total);
+                $('.sub-card.age .time-metric:nth-child(2) .time-value').text(response.age_under_40.yesterday);
+                $('.sub-card.age .time-metric:nth-child(3) .time-value').text(response.age_under_40.last_30_days);
+
+                $('.sub-card.ot-cases .card-value').text(response.ot_cases.total);
+                $('.sub-card.ot-cases .time-metric:nth-child(1) .time-value').text(response.ot_cases.total);
+                $('.sub-card.ot-cases .time-metric:nth-child(2) .time-value').text(response.ot_cases.yesterday);
+                $('.sub-card.ot-cases .time-metric:nth-child(3) .time-value').text(response.ot_cases.last_30_days);
+
+                $('.sub-card.preauth .card-value').text(response.preauth_time.total);
+                $('.sub-card.preauth .time-metric:nth-child(1) .time-value').text(response.preauth_time.total);
+                $('.sub-card.preauth .time-metric:nth-child(2) .time-value').text(response.preauth_time.yesterday);
+                $('.sub-card.preauth .time-metric:nth-child(3) .time-value').text(response.preauth_time.last_30_days);
+            }
+        });
+    }
+
+    // Initialize
+    $(document).ready(function() {
+        updateFlaggedClaims();
+        updateHighValueClaims();
+        updateHospitalBedCases();
+        updateFamilyIdCases();
+        updateGeoAnomalies();
+        updateOphthalmology();
+        
+        // Update when district changes
+        $(document).on('districtSelected', function(e, districts) {
+            updateFlaggedClaims(districts);
+            updateHighValueClaims(districts);
+            updateHospitalBedCases(districts);
+            updateFamilyIdCases(districts);
+            updateGeoAnomalies(districts);
+            updateOphthalmology(districts);
+        });
+    });
 
     // ======================
     // Enhanced Modal Controller
@@ -308,4 +520,6 @@ $(document).ready(function() {
         $('#modalOverlay').hide().removeClass('show');
         ModalController.init();
     });
+
+
 });

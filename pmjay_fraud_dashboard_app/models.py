@@ -1,3 +1,4 @@
+from django.db.models.functions import TruncDate
 from django.db import models
 
 class SuspiciousHospital(models.Model):
@@ -59,7 +60,7 @@ class Last24Hour(models.Model):
     payment_paid_date = models.DateTimeField(null=True, blank=True)
     transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     hospital_id = models.CharField(max_length=50)
-    hospital_type = models.CharField(max_length=10)  # "P" for Private, "G" for Government
+    hospital_type = models.CharField(max_length=10)
     preauth_initiated_date = models.DateTimeField()
     case_type = models.CharField(max_length=50)  # e.g., "SURGERY" or "MEDICAL"
     claim_initiated_amount = models.DecimalField(max_digits=12, decimal_places=2)
