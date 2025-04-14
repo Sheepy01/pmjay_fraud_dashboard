@@ -27,4 +27,7 @@ urlpatterns = [
     path('get-geo-anomalies/', views.get_geo_anomalies, name='get_geo_anomalies'),
     path('get-ophthalmology-cases/', views.get_ophthalmology_cases, name='get_ophthalmology_cases'),
     path('get-flagged-claims-details/', views.get_flagged_claims_details, name='get_flagged_claims_details'),
+    path('get-flagged-claims-by-district/', views.get_flagged_claims_by_district, name='get_flagged_claims_by_district'),
+    path('get-age-distribution/', views.get_age_distribution, name='get_age_distribution'),
+    path('get-gender-distribution/', views.get_gender_distribution, name='get_gender_distribution'),
 ]

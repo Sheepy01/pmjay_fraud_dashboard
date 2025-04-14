@@ -103,6 +103,7 @@ class Command(BaseCommand):
                         district_name = str(row['District Name']).strip(),
                         patient_name = str(row['Patient Name']).strip(),
                         registration_id = str(row['Registration Id']).strip(),
+                        gender = str(row['Gender']).strip().upper(),
                     )
                 )
             Last24Hour.objects.bulk_create(l24_instances, ignore_conflicts=True)

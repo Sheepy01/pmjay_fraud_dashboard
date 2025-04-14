@@ -1,4 +1,7 @@
 $(document).ready(function() {
+    let demographicPieChart = null;
+    let agePieChart, genderPieChart;
+
     // ======================
     // Sidebar Toggle (jQuery)
     // ======================
@@ -368,6 +371,7 @@ $(document).ready(function() {
         'flagged-claims': {
             title: "Flagged Claims Details",
             content: `
+                <!-- Table -->
                 <div class="data-table-container">
                     <button class="table-download-btn">
                         <i class="fas fa-download"></i> Export CSV
@@ -390,17 +394,57 @@ $(document).ready(function() {
                         Showing <span id="rowCount">0</span> records
                     </div>
                 </div>
+
+                <!-- Bar Chart -->
+                <div class="chart-container">
+                    <h4>District-wise Flagged Claims Distribution</h4>
+                    <canvas id="flaggedClaimsChart"></canvas>
+                    <div class="chart-legend" id="flaggedClaimsLegend"></div>
+                </div>
+
+                <!-- Pie Chart -->
+                <div class="dual-pie-container">
+                    <!-- Age Distribution Pie -->
+                    <div class="pie-card">
+                        <h4>Age Group Distribution</h4>
+                        <div class="chart-wrapper">
+                            <canvas id="agePieChart"></canvas>
+                            <div class="chart-callouts" id="ageCallouts"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Gender Distribution Pie -->
+                    <div class="pie-card">
+                        <h4>Gender Distribution</h4>
+                        <div class="chart-wrapper">
+                            <canvas id="genderPieChart"></canvas>
+                            <div class="chart-callouts" id="genderCallouts"></div>
+                        </div>
+                    </div>
+                </div>
             `,
             postRender: function(districts) {
-                const url = '/get-flagged-claims-details/' + 
-                        (districts.length ? `?district=${districts.join(',')}` : '');
+                console.log("Starting data load for districts:", districts); // Debug log
                 
-                fetch(url)
+                const tableUrl = '/get-flagged-claims-details/' + 
+                    (districts.length ? `?district=${districts.join(',')}` : '');
+                
+                console.log("Fetching table data from:", tableUrl); // Debug log
+                
+                fetch(tableUrl, {
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                })
                     .then(response => {
-                        if (!response.ok) throw new Error('Network response was not ok');
+                        console.log("Table response status:", response.status); // Debug log
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
                         return response.json();
                     })
                     .then(data => {
+                        console.log("Received table data:", data); // Debug log
                         const tableBody = document.getElementById('flaggedClaimsData');
                         tableBody.innerHTML = data.map(item => `
                             <tr>
@@ -417,13 +461,38 @@ $(document).ready(function() {
                         `).join('');
                         
                         document.getElementById('rowCount').textContent = data.length;
+            
+                        // Now load chart data
+                        const chartUrl = '/get-flagged-claims-by-district/' + 
+                            (districts.length ? `?district=${districts.join(',')}` : '');
+                        
+                        console.log("Fetching chart data from:", chartUrl); // Debug log
+                        
+                        return fetch(chartUrl);
+
+                    })
+                    .then(response => {
+                        console.log("Chart response status:", response.status); // Debug log
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(chartData => {
+                        console.log("Received chart data:", chartData); // Debug log
+                        renderFlaggedClaimsChart(chartData);
+                        initDemographicCharts(districts);
                     })
                     .catch(error => {
-                        console.error('Error loading flagged claims:', error);
+                        console.error('Error loading data:', error);
+                        // Show error in console and on page
+                        const errorElement = document.createElement('div');
+                        errorElement.className = 'error-message';
+                        errorElement.textContent = `Error: ${error.message}`;
                         document.getElementById('flaggedClaimsData').innerHTML = `
                             <tr>
                                 <td colspan="7" class="error-message">
-                                    Failed to load data. Please try again.
+                                    Failed to load data. ${error.message}
                                 </td>
                             </tr>
                         `;
@@ -508,6 +577,176 @@ $(document).ready(function() {
         }
     };
 
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function renderFlaggedClaimsChart(data) {
+        console.log("Chart rendering started with data:", data); // Debug
+        
+        const canvas = document.getElementById('flaggedClaimsChart');
+        if (!canvas) {
+            console.error('Canvas element not found');
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        
+        // Safely destroy previous chart
+        if (window.flaggedClaimsChart instanceof Chart) {
+            window.flaggedClaimsChart.destroy();
+        }
+        
+        // Handle empty data
+        if (!data || !data.districts || !data.counts || data.districts.length === 0) {
+            console.warn("No valid chart data received");
+            canvas.style.display = 'none';
+            const legend = document.getElementById('flaggedClaimsLegend');
+            if (legend) legend.innerHTML = '<p>No district data available</p>';
+            return;
+        }
+        
+        try {
+            window.flaggedClaimsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.districts,
+                    datasets: [{
+                        label: 'Flagged Claims',
+                        data: data.counts,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.parsed.y} claims`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Number of Claims' },
+                            ticks: { precision: 0 }
+                        },
+                        x: {
+                            title: { display: true, text: 'Districts' },
+                            ticks: { 
+                                autoSkip: false,
+                                maxRotation: 45,
+                                minRotation: 45 
+                            }
+                        }
+                    }
+                }
+            });
+            console.log("Chart rendered successfully");
+        } catch (error) {
+            console.error("Chart rendering error:", error);
+            canvas.style.display = 'none';
+            const legend = document.getElementById('flaggedClaimsLegend');
+            if (legend) legend.innerHTML = '<p>Error rendering chart</p>';
+        }
+    }
+
+    function initDemographicCharts(districts) {
+        // Load age distribution
+        fetch(`/get-age-distribution/${districts.length ? `?district=${districts.join(',')}` : ''}`)
+            .then(response => response.json())
+            .then(data => renderPieChart('agePieChart', data, 'ageCallouts'));
+        
+        // Load gender distribution
+        fetch(`/get-gender-distribution/${districts.length ? `?district=${districts.join(',')}` : ''}`)
+            .then(response => response.json())
+            .then(data => renderPieChart('genderPieChart', data, 'genderCallouts'));
+    }
+    
+    function renderPieChart(canvasId, data, calloutId) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        
+        // Destroy existing chart if it exists
+        if (canvasId === 'agePieChart' && agePieChart) agePieChart.destroy();
+        if (canvasId === 'genderPieChart' && genderPieChart) genderPieChart.destroy();
+        
+        // Create new chart
+        const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    data: data.data,
+                    backgroundColor: data.colors,
+                    borderWidth: 0,
+                    cutout: '65%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b);
+                                const percentage = Math.round((context.raw / total) * 100);
+                                return `${context.label}: ${context.raw} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true
+                }
+            }
+        });
+        
+        // Store chart reference
+        if (canvasId === 'agePieChart') agePieChart = chart;
+        if (canvasId === 'genderPieChart') genderPieChart = chart;
+        
+        // Generate callouts
+        generateCallouts(data, calloutId);
+    }
+    
+    function generateCallouts(data, containerId) {
+        const total = data.data.reduce((a, b) => a + b, 0);
+        const calloutHTML = data.labels.map((label, i) => {
+            const value = data.data[i];
+            const percentage = Math.round((value / total) * 100);
+            return `
+                <div class="callout-item">
+                    <span class="callout-color" style="background:${data.colors[i]}"></span>
+                    <strong>${label}&nbsp:&nbsp</strong> 
+                    ${value} (${percentage}%)
+                </div>
+            `;
+        }).join('');
+        
+        document.getElementById(containerId).innerHTML = calloutHTML;
+    }
+
     const ModalController = {
         init: function() {
             $('#modalOverlay').hide().removeClass('show');
@@ -584,12 +823,27 @@ $(document).ready(function() {
                 $('.table-download-btn').click(function() {
                     exportTableToCSV(cardId);
                 });
+
+                this.adjustModalScroll();
             }, 300);
         },
         
         close: function() {
             $('#modalOverlay').fadeOut(200);
             $('body').css('overflow', 'auto');
+        },
+
+        adjustModalScroll: function() {
+            // Reset scroll position when opening new modal
+            $('#modalContent').scrollTop(0);
+            
+            // Handle any dynamic content adjustments
+            const modalContent = $('#modalContent')[0];
+            if (modalContent.scrollHeight > modalContent.clientHeight) {
+                modalContent.style.overflowY = 'auto';
+            } else {
+                modalContent.style.overflowY = 'hidden';
+            }
         }
     };
     

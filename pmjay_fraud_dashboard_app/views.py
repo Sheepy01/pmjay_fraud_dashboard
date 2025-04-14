@@ -79,6 +79,30 @@ def get_flagged_claims_details(request):
     
     return JsonResponse(data, safe=False)
 
+# Add to views.py
+def get_flagged_claims_by_district(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P'
+    )
+    
+    if districts:
+        queryset = queryset.filter(district_name__in=districts)
+    
+    district_data = queryset.values('district_name').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    data = {
+        'districts': [item['district_name'] or 'Unknown' for item in district_data],
+        'counts': [item['count'] for item in district_data]
+    }
+    
+    return JsonResponse(data)
+
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -461,6 +485,102 @@ def get_ophthalmology_cases(request):
     }
     
     return JsonResponse(data)
+
+def get_age_distribution(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P'
+    )
+    
+    if districts:
+        queryset = queryset.filter(district_name__in=districts)
+    
+    # Define age groups
+    age_groups = {
+        '15-29': Count('id', filter=Q(age_years__gte=15, age_years__lte=29)),
+        '30-44': Count('id', filter=Q(age_years__gte=30, age_years__lte=44)),
+        '45-59': Count('id', filter=Q(age_years__gte=45, age_years__lte=59)),
+        '60+': Count('id', filter=Q(age_years__gte=60))
+    }
+    
+    # Get counts for each age group
+    age_data = queryset.aggregate(**age_groups)
+    
+    return JsonResponse({
+        'labels': list(age_data.keys()),
+        'data': list(age_data.values()),
+        'colors': ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']
+    })
+
+def get_gender_distribution(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P'
+    )
+    
+    if districts:
+        queryset = queryset.filter(district_name__in=districts)
+    
+    # Get raw gender counts
+    gender_data = queryset.values('gender').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    # Standardize gender labels and aggregate
+    standardized_data = {
+        'Male': 0,
+        'Female': 0,
+        'Unknown': 0
+    }
+    
+    gender_mappings = {
+        'M': 'Male',
+        'MALE': 'Male',
+        'F': 'Female',
+        'FEMALE': 'Female'
+    }
+    
+    for item in gender_data:
+        gender = str(item['gender']).strip().upper() if item['gender'] else 'Unknown'
+        
+        if gender in gender_mappings:
+            standardized_data[gender_mappings[gender]] += item['count']
+        else:
+            # Only count as Unknown if not a recognized male/female value
+            if gender not in ['MALE', 'FEMALE', 'M', 'F']:
+                standardized_data['Unknown'] += item['count']
+    
+    # Remove Unknown if count is 0
+    if standardized_data['Unknown'] == 0:
+        del standardized_data['Unknown']
+    
+    # Prepare response
+    labels = []
+    data = []
+    
+    if standardized_data.get('Male', 0) > 0:
+        labels.append('Male')
+        data.append(standardized_data['Male'])
+    
+    if standardized_data.get('Female', 0) > 0:
+        labels.append('Female')
+        data.append(standardized_data['Female'])
+    
+    if standardized_data.get('Unknown', 0) > 0:
+        labels.append('Unknown')
+        data.append(standardized_data['Unknown'])
+    
+    return JsonResponse({
+        'labels': labels,
+        'data': data,
+        'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
+    })
 
 def dashboard_view(request):
     return render(request, 'dashboard.html') 
