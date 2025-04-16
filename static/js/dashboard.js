@@ -1,5 +1,4 @@
 $(document).ready(function() {
-    let demographicPieChart = null;
     let agePieChart, genderPieChart;
 
     // ======================
@@ -794,6 +793,10 @@ $(document).ready(function() {
                 title: "Details",
                 content: `<div class="card-details"><p>Content not available</p></div>`
             };
+
+            // Set modal container class
+            const modalContainer = document.querySelector('.modal-container');
+            modalContainer.className = 'modal-container ' + cardId; // Reset and add card class
             
             $('#modalTitle').text(template.title);
             $('#modalContent').html(`

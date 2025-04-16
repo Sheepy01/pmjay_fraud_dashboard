@@ -6,6 +6,40 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+:root {
+    --patient_watchlist_card_color: #e6f0f9;
+    --high_value_claims_card_color: #fdebef;
+    --hospital_bed_card_color: #fff8e6;
+    --family_id_card_color: #e4fdf6;
+    --geo_anom_card_color: #e7fbff;
+    --ophth_cat_card_color: #e4fef9;
+}
+
+/* Card-specific colors */
+.flagged-claims {
+    border-top: 4px solid #26547D;
+}
+
+.high-value {
+    border-top: 4px solid #ef436b;
+}
+
+.hospital-beds {
+    border-top: 4px solid #ffce5c;
+}
+
+.family-id {
+    border-top: 4px solid #05c793;
+}
+
+.geo-anomalies {
+    border-top: 4px solid #0091b9;
+}
+
+.ophthalmology {
+    border-top: 4px solid #1abc9c;
+}
+
 body {
     background-color: #f5f5f5;
     color: #333;
@@ -296,6 +330,67 @@ body {
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
+.card.flagged-claims {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.flagged-claims:hover {
+    background-color: var(--patient_watchlist_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.card.high-value {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.high-value:hover {
+    background-color: var(--high_value_claims_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.card.hospital-beds {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.hospital-beds:hover {
+    background-color: var(--hospital_bed_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.card.family-id {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.family-id:hover {
+    background-color: var(--family_id_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.card.geo-anomalies {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.geo-anomalies:hover {
+    background-color: var(--geo_anom_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.card.ophthalmology {
+    transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card.ophthalmology:hover {
+    background-color: var(--ophth_cat_card_color); /* Light Blue */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+
 .card h2 {
     color: #2c3e50;
     margin-top: 0;
@@ -364,6 +459,18 @@ body {
     min-height: 80px;
 }
 
+.sub-card.age {
+    background: #fff8b3; /* Light Yellow */
+}
+
+.sub-card.ot-cases {
+    background: #ffb3e6; /* Light Magenta */
+}
+
+.sub-card.preauth {
+    background: #b3faff; /* Light Cyan */
+}
+
 .sub-card-hover {
     max-height: 0;
     opacity: 0;
@@ -389,31 +496,6 @@ body {
 /* Hover effects remain the same */
 .sub-card:hover {
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-/* Card-specific colors */
-.flagged-claims {
-    border-top: 4px solid #e74c3c;
-}
-
-.high-value {
-    border-top: 4px solid #f39c12;
-}
-
-.hospital-beds {
-    border-top: 4px solid #3498db;
-}
-
-.family-id {
-    border-top: 4px solid #2ecc71;
-}
-
-.geo-anomalies {
-    border-top: 4px solid #9b59b6;
-}
-
-.ophthalmology {
-    border-top: 4px solid #1abc9c;
 }
 
 /* Horizontal Split Layout */
@@ -521,7 +603,7 @@ body {
         max-height 0.3s ease,
         opacity 0.2s ease 0.1s, /* Delayed fade */
         transform 0.3s ease;
-    background: linear-gradient(to top, #f8f9fa 10%, transparent);
+    /* background: linear-gradient(to top, #d1dbe3 10%, transparent); */
     margin-top: 15px;
 }
 
@@ -741,6 +823,26 @@ white-space: nowrap;
     padding: 20px;
     transition: left 0.3s ease; /* Add transition for smooth movement */
     overflow: hidden;
+}
+
+/* Dynamic Modal Container Backgrounds */
+.modal-container.flagged-claims {
+    background: var(--patient_watchlist_card_color);
+}
+.modal-container.high-value {
+    background: var(--high_value_claims_card_color);
+}
+.modal-container.hospital-beds {
+    background: var(--hospital_bed_card_color);
+}
+.modal-container.family-id {
+    background: var(--family_id_card_color);
+}
+.modal-container.geo-anomalies {
+    background: var(--geo_anom_card_color);
+}
+.modal-container.ophthalmology {
+    background: var(--ophth_cat_card_color);
 }
   
 /* Modal Container - Centered with Fixed Size */

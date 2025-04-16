@@ -3,10 +3,12 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.db.models.functions import TruncDate
 from django.utils.timezone import now, timedelta
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from datetime import timedelta
 from django.db.models import Case, When, Value, CharField
 from .models import Last24Hour, SuspiciousHospital, HospitalBeds
+import pandas as pd
+import io
 
 class Upper(Func):
     function = 'UPPER'
@@ -1314,50 +1316,50 @@ def dashboard_view(request):
 #     response['Content-Disposition'] = 'attachment; filename="geo_anomalies.xlsx"'
 #     return response
 
-# def download_high_value_claims_excel(request):
-#     # Query surgical and medical
-#     surgical_claims = Last24Hour.objects.filter(
-#         hospital_type="P",
-#         case_type="SURGICAL",
-#         claim_initiated_amount__gt=100000
-#     ).values()
+def download_high_value_claims_excel(request):
+    # Query surgical and medical
+    surgical_claims = Last24Hour.objects.filter(
+        hospital_type="P",
+        case_type="SURGICAL",
+        claim_initiated_amount__gt=100000
+    ).values()
 
-#     medical_claims = Last24Hour.objects.filter(
-#         hospital_type="P",
-#         case_type="MEDICAL",
-#         claim_initiated_amount__gt=25000
-#     ).values()
+    medical_claims = Last24Hour.objects.filter(
+        hospital_type="P",
+        case_type="MEDICAL",
+        claim_initiated_amount__gt=25000
+    ).values()
 
-#     df_surgical = pd.DataFrame.from_records(surgical_claims)
-#     df_medical = pd.DataFrame.from_records(medical_claims)
+    df_surgical = pd.DataFrame.from_records(surgical_claims)
+    df_medical = pd.DataFrame.from_records(medical_claims)
 
-#     # Drop columns that are all null
-#     for df in [df_surgical, df_medical]:
-#         df.dropna(axis=1, how="all", inplace=True)
+    # Drop columns that are all null
+    for df in [df_surgical, df_medical]:
+        df.dropna(axis=1, how="all", inplace=True)
         
-#         # Convert columns to datetime if possible, then remove timezone
-#         for col in df.columns:
-#             # Try parsing columns as datetime if not already
-#             if not pd.api.types.is_datetime64_any_dtype(df[col]):
-#                 df[col] = pd.to_datetime(df[col], errors='ignore')
+        # Convert columns to datetime if possible, then remove timezone
+        for col in df.columns:
+            # Try parsing columns as datetime if not already
+            if not pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = pd.to_datetime(df[col], errors='ignore')
             
-#             # If it is datetime now, strip timezone
-#             if pd.api.types.is_datetime64_any_dtype(df[col]):
-#                 df[col] = df[col].dt.tz_localize(None)
+            # If it is datetime now, strip timezone
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].dt.tz_localize(None)
 
-#     # Write to a single Excel file with two sheets
-#     output = io.BytesIO()
-#     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-#         df_surgical.to_excel(writer, index=False, sheet_name='Surgical High Value Claims')
-#         df_medical.to_excel(writer, index=False, sheet_name='Medical High Value Claims')
-#     output.seek(0)
+    # Write to a single Excel file with two sheets
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_surgical.to_excel(writer, index=False, sheet_name='Surgical High Value Claims')
+        df_medical.to_excel(writer, index=False, sheet_name='Medical High Value Claims')
+    output.seek(0)
 
-#     response = HttpResponse(
-#         output,
-#         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-#     )
-#     response['Content-Disposition'] = 'attachment; filename="High_Value_Claims.xlsx"'
-#     return response
+    response = HttpResponse(
+        output,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="High_Value_Claims.xlsx"'
+    return response
 
 # def download_unusual_treatment_excel(request):
 #     df_unusual = get_unusual_rows()
