@@ -9,6 +9,32 @@ from django.db.models import Case, When, Value, CharField
 from .models import Last24Hour, SuspiciousHospital, HospitalBeds
 import pandas as pd
 import io
+from django.contrib.auth import authenticate, login, logout
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import login as auth_login
+
+def login_view(request):
+    # If they’re already logged in, send them straight to dashboard
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    error = None
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        user = authenticate(request, username=request.POST['username'], password=request.POST['password'])
+        if user is not None:
+            login(request, user)
+            return redirect('dashboard')
+        else:
+            error = "Invalid username or password"
+
+    return render(request, 'login.html', {'error': error})
+
+def logout_view(request):
+    logout(request)
+    return redirect('login')
 
 class Upper(Func):
     function = 'UPPER'
@@ -172,6 +198,194 @@ def get_high_value_claims(request):
     }
     
     return JsonResponse(data)
+
+def get_high_value_claims_details(request):
+    case_type = request.GET.get('case_type', 'all').upper()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(hospital_type='P')
+    
+    # Apply case type filter
+    if case_type == 'SURGICAL':
+        base_query = base_query.filter(
+            case_type__iexact='SURGICAL',
+            claim_initiated_amount__gte=100000
+        )
+    elif case_type == 'MEDICAL':
+        base_query = base_query.filter(
+            case_type__iexact='MEDICAL',
+            claim_initiated_amount__gte=25000
+        )
+    else:  # All
+        base_query = base_query.filter(
+            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    data = []
+    for idx, case in enumerate(base_query[:500], 1):
+        data.append({
+            'serial_no': idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
+            'district_name': case.district_name or 'N/A',
+            'amount': case.claim_initiated_amount or 0,
+            'case_type': case.case_type.upper() if case.case_type else 'N/A'
+        })
+    
+    return JsonResponse(data, safe=False)
+
+def get_high_value_claims_by_district(request):
+    case_type = request.GET.get('case_type', 'all').upper()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(hospital_type='P')
+    
+    # Apply value thresholds
+    if case_type == 'SURGICAL':
+        base_query = base_query.filter(
+            case_type__iexact='SURGICAL',
+            claim_initiated_amount__gte=100000
+        )
+    elif case_type == 'MEDICAL':
+        base_query = base_query.filter(
+            case_type__iexact='MEDICAL',
+            claim_initiated_amount__gte=25000
+        )
+    else:  # All
+        base_query = base_query.filter(
+            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    district_data = base_query.values('district_name').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    return JsonResponse({
+        'districts': [d['district_name'] or 'Unknown' for d in district_data],
+        'counts': [d['count'] for d in district_data]
+    })
+
+def get_high_value_age_distribution(request):
+    case_type = request.GET.get('case_type', 'all').upper()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(hospital_type='P')
+    
+    # Apply case type filter
+    if case_type == 'SURGICAL':
+        base_query = base_query.filter(
+            case_type__iexact='SURGICAL',
+            claim_initiated_amount__gte=100000
+        )
+    elif case_type == 'MEDICAL':
+        base_query = base_query.filter(
+            case_type__iexact='MEDICAL',
+            claim_initiated_amount__gte=25000
+        )
+    else:
+        base_query = base_query.filter(
+            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    # Define age groups (match existing visualization categories)
+    age_groups = Case(
+        When(age_years__lt=20, then=Value('≤20')),
+        When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
+        When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
+        When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
+        When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
+        When(age_years__gte=60, then=Value('60+')),
+        default=Value('Unknown'),
+        output_field=CharField()
+    )
+    
+    age_data = base_query.annotate(age_group=age_groups).values('age_group') \
+        .annotate(count=Count('id')).order_by('age_group')
+    
+    # Convert to frontend format with consistent category order
+    categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
+    colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+    
+    # Create a dictionary for easy lookup
+    age_dict = {item['age_group']: item['count'] for item in age_data}
+    
+    # Fill in missing categories with 0 count
+    formatted_data = {
+        'labels': categories,
+        'data': [age_dict.get(cat, 0) for cat in categories],
+        'colors': colors
+    }
+    
+    return JsonResponse(formatted_data)
+
+def get_high_value_gender_distribution(request):
+    case_type = request.GET.get('case_type', 'all').upper()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(hospital_type='P')
+    
+    # Apply case type filter (same as age distribution)
+    if case_type == 'SURGICAL':
+        base_query = base_query.filter(
+            case_type__iexact='SURGICAL',
+            claim_initiated_amount__gte=100000
+        )
+    elif case_type == 'MEDICAL':
+        base_query = base_query.filter(
+            case_type__iexact='MEDICAL',
+            claim_initiated_amount__gte=25000
+        )
+    else:
+        base_query = base_query.filter(
+            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    # Normalize gender values
+    gender_groups = Case(
+        When(gender__iexact='M', then=Value('Male')),
+        When(gender__iexact='F', then=Value('Female')),
+        When(gender__isnull=False, then=Value('Other')),
+        default=Value('Unknown'),
+        output_field=CharField()
+    )
+    
+    gender_data = base_query.annotate(gender_group=gender_groups).values('gender_group') \
+        .annotate(count=Count('id')).order_by('gender_group')
+    
+    # Maintain consistent category order
+    categories = ['Male', 'Female', 'Other', 'Unknown']
+    colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
+    
+    gender_dict = {item['gender_group']: item['count'] for item in gender_data}
+    
+    formatted_data = {
+        'labels': categories,
+        'data': [gender_dict.get(cat, 0) for cat in categories],
+        'colors': colors
+    }
+    
+    return JsonResponse(formatted_data)
 
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
@@ -584,6 +798,7 @@ def get_gender_distribution(request):
         'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
     })
 
+@login_required(login_url='login')
 def dashboard_view(request):
     return render(request, 'dashboard.html') 
 

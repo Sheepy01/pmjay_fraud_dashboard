@@ -1,4 +1,5 @@
 $(document).ready(function() {
+    window.highValueCharts = {};
     let agePieChart, genderPieChart;
 
     // ======================
@@ -500,12 +501,322 @@ $(document).ready(function() {
         },
         'high-value': {
             title: "High Value Claims",
-            content: `<div class="card-details">
-                        <h4>High Value Trends</h4>
+            content: `
+                <div class="case-type-selector">
+                    <button class="case-type-btn active" data-type="all">All</button>
+                    <button class="case-type-btn" data-type="surgical">Surgical</button>
+                    <button class="case-type-btn" data-type="medical">Medical</button>
+                </div>
+                
+                <!-- Table Container -->
+                <div class="data-table-container">
+                    <button class="table-download-btn">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Claim ID</th>
+                                <th>Patient</th>
+                                <th>Hospital</th>
+                                <th>District</th>
+                                <th>Amount (₹)</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="highValueClaimsData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        Showing <span id="highValueRowCount">0</span> records
+                    </div>
+                </div>
+
+                <!-- Charts Container -->
+                <div class="charts-container" id="highValueCharts"></div>
+            `,
+            postRender: function(districts) {
+                const initialType = 'all';
+                this.handleCaseTypeChange(initialType, districts);
+                this.initCaseTypeButtons(districts);
+            },
+            handleCaseTypeChange: function(caseType, districts) {
+                this.loadTableData(caseType, districts);
+                this.loadCharts(caseType, districts);
+            },
+            loadTableData: function(caseType, districts) {
+                const url = `/get-high-value-claims-details/?case_type=${caseType}&district=${districts.join(',')}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        const tbody = document.getElementById('highValueClaimsData');
+                        tbody.innerHTML = data.map(item => `
+                            <tr>
+                                <td>${item.serial_no}</td>
+                                <td>${item.claim_id}</td>
+                                <td>${item.patient_name}</td>
+                                <td>${item.hospital_name}</td>
+                                <td>${item.district_name}</td>
+                                <td>₹${item.amount.toLocaleString('en-IN')}</td>
+                                <td class="case-type-${item.case_type.toLowerCase()}">${item.case_type}</td>
+                            </tr>
+                        `).join('');
+                        document.getElementById('highValueRowCount').textContent = data.length;
+                    })
+                    .catch(error => console.error('Table load error:', error));
+            },
+            loadCharts: function(caseType, districts) {
+                const container = document.getElementById('highValueCharts');
+                container.innerHTML = caseType === 'all' ? `
+                    <div class="chart-group">
+                        <!-- Bar Charts -->
                         <div class="chart-container">
-                            <p>Chart showing claim values over time</p>
+                            <h4>Combined District Distribution</h4>
+                            <canvas id="highValueAllChart"></canvas>
                         </div>
-                      </div>`
+                        <div class="chart-container">
+                            <h4>Medical Cases Distribution</h4>
+                            <canvas id="highValueMedicalChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h4>Surgical Cases Distribution</h4>
+                            <canvas id="highValueSurgicalChart"></canvas>
+                        </div>
+                        
+                        <!-- Pie Charts -->
+                        <div class="dual-pie-container">
+                            <div class="pie-card">
+                                <h4>Combined Age Distribution</h4>
+                                <canvas id="highValueAllAgeChart"></canvas>
+                                <div class="chart-callouts" id="highValueAllAgeCallouts"></div>
+                            </div>
+                            <div class="pie-card">
+                                <h4>Combined Gender Distribution</h4>
+                                <canvas id="highValueAllGenderChart"></canvas>
+                                <div class="chart-callouts" id="highValueAllGenderCallouts"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="dual-pie-container">
+                            <div class="pie-card">
+                                <h4>Medical Age Distribution</h4>
+                                <canvas id="highValueMedicalAgeChart"></canvas>
+                                <div class="chart-callouts" id="highValueMedicalAgeCallouts"></div>
+                            </div>
+                            <div class="pie-card">
+                                <h4>Medical Gender Distribution</h4>
+                                <canvas id="highValueMedicalGenderChart"></canvas>
+                                <div class="chart-callouts" id="highValueMedicalGenderCallouts"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="dual-pie-container">
+                            <div class="pie-card">
+                                <h4>Surgical Age Distribution</h4>
+                                <canvas id="highValueSurgicalAgeChart"></canvas>
+                                <div class="chart-callouts" id="highValueSurgicalAgeCallouts"></div>
+                            </div>
+                            <div class="pie-card">
+                                <h4>Surgical Gender Distribution</h4>
+                                <canvas id="highValueSurgicalGenderChart"></canvas>
+                                <div class="chart-callouts" id="highValueSurgicalGenderCallouts"></div>
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="chart-group">
+                        <div class="chart-container">
+                            <h4>District Distribution (${caseType})</h4>
+                            <canvas id="highValue${caseType}Chart"></canvas>
+                        </div>
+                        
+                        <div class="dual-pie-container">
+                            <div class="pie-card">
+                                <h4>${this.capitalize(caseType)} Age Distribution</h4>
+                                <canvas id="highValue${caseType}AgeChart"></canvas>
+                                <div class="chart-callouts" id="highValue${caseType}AgeCallouts"></div>
+                            </div>
+                            <div class="pie-card">
+                                <h4>${this.capitalize(caseType)} Gender Distribution</h4>
+                                <canvas id="highValue${caseType}GenderChart"></canvas>
+                                <div class="chart-callouts" id="highValue${caseType}GenderCallouts"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+        
+                if (caseType === 'all') {
+                    this.loadChartData('all', districts, 'highValueAllChart');
+                    this.loadChartData('medical', districts, 'highValueMedicalChart');
+                    this.loadChartData('surgical', districts, 'highValueSurgicalChart');
+                    
+                    this.loadDemographics('all', districts, 'highValueAllAgeChart', 'highValueAllGenderChart', 
+                        'highValueAllAgeCallouts', 'highValueAllGenderCallouts');
+                    this.loadDemographics('medical', districts, 'highValueMedicalAgeChart', 'highValueMedicalGenderChart', 
+                        'highValueMedicalAgeCallouts', 'highValueMedicalGenderCallouts');
+                    this.loadDemographics('surgical', districts, 'highValueSurgicalAgeChart', 'highValueSurgicalGenderChart', 
+                        'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts');
+                } else {
+                    this.loadChartData(caseType, districts, `highValue${caseType}Chart`);
+                    this.loadDemographics(caseType, districts, `highValue${caseType}AgeChart`, 
+                        `highValue${caseType}GenderChart`, `highValue${caseType}AgeCallouts`, 
+                        `highValue${caseType}GenderCallouts`);
+                }
+            },
+            loadChartData: function(caseType, districts, canvasId) {
+                const url = `/get-high-value-claims-by-district/?case_type=${caseType}&district=${districts.join(',')}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => this.renderBarChart(canvasId, data, caseType))
+                    .catch(error => console.error('Chart load error:', error));
+            },
+            renderBarChart: function(canvasId, data, caseType) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) {
+                    console.error('Canvas context not found for:', canvasId);
+                    return;
+                }
+        
+                if (window.highValueCharts[canvasId]) {
+                    window.highValueCharts[canvasId].destroy();
+                }
+                
+                window.highValueCharts[canvasId] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.districts,
+                        datasets: [{
+                            label: `${this.capitalize(caseType)} Claims`,
+                            data: data.counts,
+                            backgroundColor: caseType === 'surgical' ? '#FF6384' : '#36A2EB',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.dataset.label}: ${context.parsed.y}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Claims' },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { display: true, text: 'Districts' },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        },
+                        animation: {
+                            onComplete: () => {
+                                this.handleChartResize();
+                            }
+                        },
+                    }
+                });
+            },
+            loadDemographics: function(caseType, districts, ageCanvasId, genderCanvasId, ageCalloutId, genderCalloutId) {
+                fetch(`/get-high-value-age-distribution/?case_type=${caseType}&district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart(ageCanvasId, data, ageCalloutId))
+                    .catch(error => console.error('Age data error:', error));
+        
+                fetch(`/get-high-value-gender-distribution/?case_type=${caseType}&district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart(genderCanvasId, data, genderCalloutId))
+                    .catch(error => console.error('Gender data error:', error));
+            },
+            renderPieChart: function(canvasId, data, calloutId) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) {
+                    console.error('Canvas context not found for:', canvasId);
+                    return;
+                }   
+        
+                if (window.highValueCharts[canvasId]) {
+                    window.highValueCharts[canvasId].destroy();
+                }
+                
+                window.highValueCharts[canvasId] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors,
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => {
+                                        const total = context.dataset.data.reduce((a, b) => a + b);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        onComplete: () => {
+                            this.handleChartResize();
+                        }
+                    },
+                });
+                
+                this.generateCallouts(data, calloutId);
+            },
+            handleChartResize: function() {
+                Object.values(window.highValueCharts).forEach(chart => {
+                    chart.resize();
+                });
+            },
+            generateCallouts: function(data, containerId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                const total = data.data.reduce((a, b) => a + b, 0);
+                container.innerHTML = data.labels.map((label, i) => `
+                    <div class="callout-item">
+                        <span class="callout-color" style="background:${data.colors[i]}"></span>
+                        <strong>${label}:</strong> 
+                        ${data.data[i]} (${Math.round((data.data[i]/total))*100}%)
+                    </div>
+                `).join('');
+            },
+            initCaseTypeButtons: function(districts) {
+                $('.case-type-btn').off('click').on('click', e => {
+                    const btn = $(e.currentTarget);
+                    const caseType = btn.data('type');
+                    
+                    $('.case-type-btn').removeClass('active');
+                    btn.addClass('active');
+                    
+                    this.handleCaseTypeChange(caseType, districts);
+                });
+            },
+            capitalize: function(str) {
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
         },
         'hospital-beds': {
             title: "Hospital Bed Cases",
@@ -794,6 +1105,9 @@ $(document).ready(function() {
                 content: `<div class="card-details"><p>Content not available</p></div>`
             };
 
+            Object.values(window.highValueCharts).forEach(chart => chart.destroy());
+            window.highValueCharts = {};
+
             // Set modal container class
             const modalContainer = document.querySelector('.modal-container');
             modalContainer.className = 'modal-container ' + cardId; // Reset and add card class
@@ -812,6 +1126,9 @@ $(document).ready(function() {
             // Load content after short delay (for spinner visibility)
             setTimeout(() => {
                 $('#modalContent').html(template.content);
+
+                const container = document.getElementById('highValueCharts');
+                if (container) container.offsetHeight;
                 
                 // If template has postRender, execute it with districts
                 if (template.postRender) {

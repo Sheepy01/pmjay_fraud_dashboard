@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMJAY Fraud Detection - Login</title>
+    <link rel="stylesheet" href="{% static 'css/demo/login.css' %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Particles background -->
+    {% comment %} <div class="plexus-background" id="plexus-container"></div> {% endcomment %}
+    {% comment %} <img src = "{% static 'images/login/1348.jpg' %}" alt="Login Pattern Bg"></img> {% endcomment %}
+    <!-- Login Form -->
+    <div class="login-container" id="loginContainer">
+        <div class="logo">
+            <img src="{% static 'images/pmjaylogo.png' %}" alt="PMJAY Logo">
+        </div>
+        <div class="login-header">
+            <h1>Fraud Detection Dashboard</h1>
+        </div>
+        <form class="login-form" method="POST" action="{% url 'login' %}">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+                <i class="fas fa-lock"></i>
+            </div>
+            <button type="submit" class="btn-login">Login</button>
+            {% if error %}
+            <div class="error-message">{{ error }}</div>
+            {% endif %}
+        </form>
+    </div>
+    
+    <!-- Dashboard (hidden initially) -->
+    <div class="dashboard-container" id="dashboardContainer">
+        {% include 'dashboard.html' %}
+    </div>
+    
+    <link rel="stylesheet" href="{% static 'css/demo/login.css' %}">
+    <script src="{% static 'js/login.js' %}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+</body>
+</html>

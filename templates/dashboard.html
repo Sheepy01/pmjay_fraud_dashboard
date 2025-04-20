@@ -14,19 +14,31 @@
     <div class="container">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <a href="index.html" class="brand-logo">
-                    <img src="/static/images/pmjaylogo.png" alt="logo" style="width: 90px; height: auto;">
+            <div class="sidebar-bg-image"></div>
+            <div class="sidebar-inner">
+                <div class="sidebar-header">
+                    <a href="index.html" class="brand-logo">
+                        <img src="/static/images/pmjaylogo.png" alt="logo" style="width: 90px; height: auto;">
+                    </a>
+                </div>
+                <ul class="sidebar-menu">
+                    <li class="active">
+                        <a href="#">
+                            <i class="fas fa-tachometer-alt"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <!-- Add other menu items here -->
+                </ul>
+            </div>
+            
+            <!-- Logout Button (now at true bottom) -->
+            <div class="sidebar-footer">
+                <a href="{% url 'logout' %}" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Log Out</span>
                 </a>
             </div>
-            <ul class="sidebar-menu">
-                <li class="active">
-                    <a href="#">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </li>
-            </ul>
         </div>
 
         <!-- Main Content -->

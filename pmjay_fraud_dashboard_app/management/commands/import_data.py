@@ -104,6 +104,7 @@ class Command(BaseCommand):
                         patient_name = str(row['Patient Name']).strip(),
                         registration_id = str(row['Registration Id']).strip(),
                         gender = str(row['Gender']).strip().upper(),
+                        hospital_name = str(row['Hospital Name']).strip().upper(),
                     )
                 )
             Last24Hour.objects.bulk_create(l24_instances, ignore_conflicts=True)
