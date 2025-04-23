@@ -1,18 +1,21 @@
-from django.db.models import Sum, Q, Avg, F, Func, Count
-from django.shortcuts import render
-from django.utils import timezone
+from django.db.models import Sum, Q, Avg, F, Func, Count, Subquery, Max
+from .models import Last24Hour, SuspiciousHospital, HospitalBeds
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.db.models import Case, When, Value, CharField
+from django.contrib.auth import login as auth_login
+from django.http import JsonResponse, HttpResponse
 from django.db.models.functions import TruncDate
 from django.utils.timezone import now, timedelta
-from django.http import JsonResponse, HttpResponse
-from datetime import timedelta
-from django.db.models import Case, When, Value, CharField
-from .models import Last24Hour, SuspiciousHospital, HospitalBeds
-import pandas as pd
-import io
-from django.contrib.auth import authenticate, login, logout
+from openpyxl.styles import PatternFill, Font
 from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login as auth_login
+from django.core.paginator import Paginator
+from django.shortcuts import render
+from django.utils import timezone
+from datetime import timedelta
+import pandas as pd
+import re
+import io
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -77,35 +80,48 @@ def get_flagged_claims(request):
 
 def get_flagged_claims_details(request):
     district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
+
+    # Get suspicious hospitals
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     
-    # Prefetch hospital names in one query
-    hospital_names = {
-        h.hospital_id: h.hospital_name 
-        for h in SuspiciousHospital.objects.all()
-    }
-    
+    # Base query
     flagged_cases = Last24Hour.objects.filter(
-        hospital_id__in=hospital_names.keys(),
-        hospital_type='P'
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P')
     )
     
     if districts:
         flagged_cases = flagged_cases.filter(district_name__in=districts)
     
+    # Pagination
+    paginator = Paginator(flagged_cases, page_size)
+    page_obj = paginator.get_page(page)
+    
     data = []
-    for idx, case in enumerate(flagged_cases[:500], 1):
+    for idx, case in enumerate(page_obj.object_list, 1):
         data.append({
-            'serial_no': idx,
+            'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
-            'patient_name': case.patient_name or f"Patient {case.member_id}" or 'N/A',
-            'hospital_name': hospital_names.get(case.hospital_id, case.hospital_name or 'N/A'),
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
             'amount': case.claim_initiated_amount or 0,
             'reason': 'Suspicious hospital'
         })
     
-    return JsonResponse(data, safe=False)
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
 
 # Add to views.py
 def get_flagged_claims_by_district(request):
@@ -202,8 +218,10 @@ def get_high_value_claims(request):
 def get_high_value_claims_details(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))  # Default 50 items per page
     
+    # Base query
     base_query = Last24Hour.objects.filter(hospital_type='P')
     
     # Apply case type filter
@@ -217,19 +235,25 @@ def get_high_value_claims_details(request):
             case_type__iexact='MEDICAL',
             claim_initiated_amount__gte=25000
         )
-    else:  # All
+    else:
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
             Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
         )
     
-    if districts:
+    if district_param:
+        districts = district_param.split(',')
         base_query = base_query.filter(district_name__in=districts)
     
+    # Create paginator
+    paginator = Paginator(base_query, page_size)
+    page_obj = paginator.get_page(page)
+    
+    # Serialize data
     data = []
-    for idx, case in enumerate(base_query[:500], 1):
+    for idx, case in enumerate(page_obj.object_list, 1):
         data.append({
-            'serial_no': idx,
+            'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_name': case.hospital_name or 'N/A',
@@ -238,7 +262,16 @@ def get_high_value_claims_details(request):
             'case_type': case.case_type.upper() if case.case_type else 'N/A'
         })
     
-    return JsonResponse(data, safe=False)
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
 
 def get_high_value_claims_by_district(request):
     case_type = request.GET.get('case_type', 'all').upper()
@@ -390,105 +423,174 @@ def get_high_value_gender_distribution(request):
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
+
     today = timezone.now().date()
     yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
 
-    # 1. Get all hospital bed data in one query
-    hospitals_with_beds = HospitalBeds.objects.all().values('hospital_id', 'bed_strength')
-    hospital_ids = [h['hospital_id'] for h in hospitals_with_beds]
-    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in hospitals_with_beds}
-    
-    # 2. Get all hospital names in one query
-    hospital_names = dict(Last24Hour.objects.filter(
-        hospital_id__in=hospital_ids
-    ).values_list('hospital_id', 'hospital_name').distinct())
-    
-    # 3. Get today's admissions count per hospital in one query
-    today_admissions = Last24Hour.objects.filter(
-        Q(hospital_id__in=hospital_ids) & 
-        (Q(admission_date__date=today) | 
-         Q(admission_date__isnull=True, preauth_initiated_date__date=today))
-    ).values('hospital_id').annotate(count=Count('id'))
-    
-    # 4. Find violating hospitals today
-    violating_hospitals_today = [
-        admission['hospital_id'] for admission in today_admissions
-        if admission['count'] > bed_strengths.get(admission['hospital_id'], 0)
-    ]
-    
-    # 5. Get cases for violating hospitals (with district filter if specified)
-    cases = Last24Hour.objects.filter(
-        hospital_id__in=violating_hospitals_today,
-        hospital_type='P'
-    )
-    if districts:
-        cases = cases.filter(district_name__in=districts)
-    
-    # 6. Get yesterday's admissions count per hospital in one query
-    yesterday_admissions = Last24Hour.objects.filter(
-        Q(hospital_id__in=hospital_ids) & 
-        (Q(admission_date__date=yesterday) | 
-         Q(admission_date__isnull=True, preauth_initiated_date__date=yesterday))
-    ).values('hospital_id').annotate(count=Count('id'))
-    
-    # 7. Find violating hospitals yesterday
-    violating_hospitals_yesterday = [
-        admission['hospital_id'] for admission in yesterday_admissions
-        if admission['count'] > bed_strengths.get(admission['hospital_id'], 0)
-    ]
-    
-    # 8. Count violations in last 30 days (optimized)
-    date_range = [today - timedelta(days=n) for n in range(30)]
-    violations_last_30_days = 0
-    
-    # Get all admissions in date range
-    all_admissions = Last24Hour.objects.filter(
-        Q(hospital_id__in=hospital_ids) & 
-        (Q(admission_date__date__in=date_range) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__in=date_range))
-    ).values('hospital_id', 'admission_date', 'preauth_initiated_date')
-    
-    # Process in memory
-    violations_by_date = set()
-    for admission in all_admissions:
-        day = admission['admission_date'] or admission['preauth_initiated_date']
-        if day:
-            # Count admissions per hospital per day
-            admissions_count = Last24Hour.objects.filter(
-                Q(hospital_id=admission['hospital_id']) & 
-                (Q(admission_date__date=day) | 
-                 Q(admission_date__isnull=True, preauth_initiated_date__date=day))
-            ).count()
-            
-            if admissions_count > bed_strengths.get(admission['hospital_id'], 0):
-                violations_by_date.add(day)
-    
-    violations_last_30_days = len(violations_by_date)
-    
-    # 9. Prepare violation details for today
-    violations_today = []
-    for hospital_id in violating_hospitals_today:
-        admissions = next(
-            (a['count'] for a in today_admissions if a['hospital_id'] == hospital_id),
-            0
+    # 1. Load bed strengths
+    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
+    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    hospital_ids = list(bed_strengths.keys())
+
+    # 2. Helper to fetch admissions per hospital/date
+    def admissions_qs(start_date, end_date):
+        return Last24Hour.objects.filter(
+            Q(hospital_id__in=hospital_ids) &
+            (Q(admission_date__date__range=(start_date, end_date)) |
+             Q(admission_date__isnull=True, preauth_initiated_date__date__range=(start_date, end_date)))
         )
-        
-        violations_today.append({
-            'hospital': hospital_names.get(hospital_id, f"Hospital {hospital_id}"),
-            'admissions': admissions,
-            'bed_strength': bed_strengths.get(hospital_id, 0)
+
+    # 3. Today: compute per-hospital counts and find violations
+    today_adm = admissions_qs(today, today)
+    today_counts = today_adm.values('hospital_id').annotate(count=Count('id'))
+    violating_today = [a['hospital_id'] for a in today_counts
+                       if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
+
+    # 4. Yesterday: similar
+    yest_adm = admissions_qs(yesterday, yesterday)
+    yest_counts = yest_adm.values('hospital_id').annotate(count=Count('id'))
+    violating_yesterday = [a['hospital_id'] for a in yest_counts
+                            if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
+
+    # 5. Last 30 days: annotate per hospital per day, then distinct hospital overflow
+    range_adm = admissions_qs(thirty_days_ago, today)
+    # annotate day and count
+    from django.db.models.functions import Coalesce, TruncDate
+
+    annotated = (
+        range_adm
+        .annotate(ts=Coalesce('admission_date', 'preauth_initiated_date'))
+        .annotate(day=TruncDate('ts'))
+        .values('hospital_id', 'day')
+        .annotate(count=Count('id'))
+        .filter(count__gt=0)  # initial filter, we'll apply bed check below
+    )
+    violating_30_set = set(
+        rec['hospital_id']
+        for rec in annotated
+        if rec['count'] > bed_strengths.get(rec['hospital_id'], 0)
+    )
+
+    # 6. Fetch hospital names for today's violations
+    names = Last24Hour.objects.filter(
+        hospital_id__in=violating_today
+    ).values_list('hospital_id', 'hospital_name').distinct()
+    hospital_names = {hid: name for hid, name in names}
+
+    # 7. Build detailed list for today's violations
+    details_today = []
+    for hid in violating_today:
+        count = next((a['count'] for a in today_counts if a['hospital_id'] == hid), 0)
+        details_today.append({
+            'hospital': hospital_names.get(hid, f"Hospital {hid}"),
+            'admissions': count,
+            'bed_strength': bed_strengths.get(hid, 0)
+        })
+
+    # 8. Prepare response
+    data = {
+        'total': len(violating_today),
+        'yesterday': len(violating_yesterday),
+        'last_30_days': len(violating_30_set),
+        'violations_today': details_today
+    }
+    return JsonResponse(data)
+
+def get_hospital_bed_details(request):
+    district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    districts = district_param.split(',') if district_param else []
+    
+    today = timezone.now().date()
+    
+    # 1. Load bed strengths
+    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
+    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    
+    # 2. Get today's admissions with hospital details
+    violations = (
+        Last24Hour.objects
+        .filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        )
+        .values('hospital_id', 'hospital_name', 'district_name', 'state_name')
+        .annotate(
+            admissions=Count('id'),
+            last_violation_date=Max('admission_date')
+        )
+    )
+    
+    if districts:
+        violations = violations.filter(district_name__in=districts)
+    
+    # 3. Add bed capacity and filter violations
+    enhanced_violations = []
+    for violation in violations:
+        bed_capacity = bed_strengths.get(violation['hospital_id'], 0)
+        if violation['admissions'] > bed_capacity:
+            enhanced_violations.append({
+                **violation,
+                'bed_capacity': bed_capacity,
+                'excess': violation['admissions'] - bed_capacity
+            })
+    
+    # 4. Paginate in-memory list
+    paginator = Paginator(enhanced_violations, page_size)
+    page_obj = paginator.get_page(page)
+    
+    # 5. Serialize data
+    data = []
+    for idx, violation in enumerate(page_obj.object_list, 1):
+        data.append({
+            'serial_no': (page_obj.number - 1) * page_size + idx,
+            'hospital_id': violation['hospital_id'],
+            'hospital_name': violation['hospital_name'],
+            'district': violation['district_name'],
+            'state': violation['state_name'],
+            'bed_capacity': violation['bed_capacity'],
+            'admissions': violation['admissions'],
+            'excess': violation['excess'],
+            'last_violation': violation['last_violation_date'].strftime('%Y-%m-%d') if violation['last_violation_date'] else 'N/A'
         })
     
-    data = {
-        'total': cases.count(),
-        'yesterday': len(violating_hospitals_yesterday),
-        'last_30_days': violations_last_30_days,
-        'violations_today': violations_today
-    }
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
+
+def hospital_violations_by_district(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
     
-    return JsonResponse(data)
+    today = timezone.now().date()
+    
+    result = (
+        Last24Hour.objects
+        .filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        )
+        .values('district_name')
+        .annotate(violation_count=Count('hospital_id', distinct=True))
+        .order_by('-violation_count')
+    )
+    
+    if districts:
+        result = result.filter(district_name__in=districts)
+    
+    return JsonResponse({
+        'districts': [item['district_name'] or 'Unknown' for item in result],
+        'counts': [item['violation_count'] for item in result]
+    })
 
 def get_family_id_cases(request):
     district_param = request.GET.get('district', '')
@@ -581,6 +683,157 @@ def get_family_id_cases(request):
     
     return JsonResponse(data)
 
+def get_family_id_cases_details(request):
+    district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    districts = district_param.split(',') if district_param else []
+    
+    today = timezone.now().date()
+    
+    # Get all individual claims from suspicious families
+    cases = Last24Hour.objects.filter(
+        Q(hospital_type='P') &
+        Q(family_id__in=Subquery(
+            Last24Hour.objects
+            .annotate(day=TruncDate('preauth_initiated_date'))
+            .values('family_id', 'day')
+            .annotate(count=Count('id'))
+            .filter(count__gt=2)
+            .values('family_id')
+        )) &
+        Q(preauth_initiated_date__date=today)
+    ).order_by('family_id', 'preauth_initiated_date')
+    
+    if districts:
+        cases = cases.filter(district_name__in=districts)
+    
+    # Pagination
+    paginator = Paginator(cases, page_size)
+    page_obj = paginator.get_page(page)
+    
+    # Serialize data
+    data = []
+    for idx, case in enumerate(page_obj.object_list, 1):
+        data.append({
+            'serial_no': (page_obj.number - 1) * page_size + idx,
+            'family_id': case.family_id,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'district_name': case.district_name or 'N/A',
+            'hospital_name': case.hospital_name or 'N/A',
+            'date': case.preauth_initiated_date.date()
+        })
+    
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
+
+def get_family_violations_by_district(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    # Get count of unique families per district
+    result = (
+        Last24Hour.objects
+        .filter(hospital_type='P')
+        .annotate(day=TruncDate('preauth_initiated_date'))
+        .values('family_id', 'day', 'district_name')
+        .annotate(count=Count('id'))
+        .filter(count__gt=2)
+        .values('district_name')
+        .annotate(family_count=Count('family_id', distinct=True))
+        .order_by('-family_count')
+    )
+    
+    if districts:
+        result = result.filter(district_name__in=districts)
+    
+    return JsonResponse({
+        'districts': [item['district_name'] for item in result],
+        'counts': [item['family_count'] for item in result]
+    })
+
+def get_family_violations_demographics(request, type):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_type='P') &
+        Q(family_id__in=Subquery(
+            Last24Hour.objects
+            .annotate(day=TruncDate('preauth_initiated_date'))
+            .values('family_id', 'day')
+            .annotate(count=Count('id'))
+            .filter(count__gt=2)
+            .values('family_id')
+        ))
+    )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    if type == 'age':
+        # Age distribution logic
+        age_groups = Case(
+            When(age_years__lt=20, then=Value('≤20')),
+            When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
+            When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
+            When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
+            When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
+            When(age_years__gte=60, then=Value('60+')),
+            default=Value('Unknown'),
+            output_field=CharField()
+        )
+        
+        age_data = base_query.annotate(age_group=age_groups).values('age_group') \
+            .annotate(count=Count('id')).order_by('age_group')
+        
+        categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
+        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+        
+        age_dict = {item['age_group']: item['count'] for item in age_data}
+        
+        data = {
+            'labels': categories,
+            'data': [age_dict.get(cat, 0) for cat in categories],
+            'colors': colors
+        }
+        
+    elif type == 'gender':
+        # Gender distribution logic
+        gender_data = base_query.values('gender') \
+            .annotate(count=Count('id')).order_by('gender')
+        
+        categories = ['Male', 'Female', 'Other', 'Unknown']
+        colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
+        
+        gender_map = {
+            'M': 'Male',
+            'F': 'Female',
+            'O': 'Other'
+        }
+        
+        gender_dict = {}
+        for item in gender_data:
+            gender = gender_map.get(item['gender'], 'Unknown')
+            gender_dict[gender] = item['count']
+        
+        data = {
+            'labels': categories,
+            'data': [gender_dict.get(cat, 0) for cat in categories],
+            'colors': colors
+        }
+    
+    return JsonResponse(data)
+
 def get_geo_anomalies(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -634,73 +887,567 @@ def get_geo_anomalies(request):
 
     return JsonResponse(data)
 
-def get_ophthalmology_cases(request):
+def get_geo_anomalies_details(request):
+    district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    districts = district_param.split(',') if district_param else []
+    
+    today = timezone.now().date()
+    
+    cases = Last24Hour.objects.filter(
+        hospital_type='P',
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(state_name=F('hospital_state_name')).filter(
+        Q(admission_date__date=today) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+    ).order_by('state_name', 'hospital_state_name')
+    
+    if districts:
+        cases = cases.filter(district_name__in=districts)
+
+    paginator = Paginator(cases, page_size)
+    page_obj = paginator.get_page(page)
+
+    data = []
+    for idx, case in enumerate(page_obj.object_list, 1):
+        data.append({
+            'serial_no': (page_obj.number - 1) * page_size + idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'district_name': case.district_name or 'N/A',
+            'hospital_name': case.hospital_name or 'N/A',
+            'patient_state': case.state_name or 'N/A',
+            'hospital_state': case.hospital_state_name or 'N/A',
+        })
+
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
+
+def get_geo_violations_by_state(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
     today = timezone.now().date()
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
-
-    # Base queryset - private hospitals with cataract procedure
-    base_qs = Last24Hour.objects.filter(
+    
+    cases = Last24Hour.objects.filter(
         hospital_type='P',
-        procedure_code='SE020A'  # Ophthalmology cataract code
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(state_name=F('hospital_state_name')).filter(
+        Q(admission_date__date=today) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
     )
     
     if districts:
+        cases = cases.filter(district_name__in=districts)
+
+    result = cases.values('state_name').annotate(count=Count('id')).order_by('-count')
+    
+    return JsonResponse({
+        'states': [item['state_name'] for item in result],
+        'counts': [item['count'] for item in result]
+    })
+
+def get_geo_violations_demographics(request, type):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    
+    base_query = Last24Hour.objects.filter(
+        hospital_type='P',
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(state_name=F('hospital_state_name'))
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+
+    if type == 'age':
+        age_groups = Case(
+            When(age_years__lt=20, then=Value('≤20')),
+            When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
+            When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
+            When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
+            When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
+            When(age_years__gte=60, then=Value('60+')),
+            default=Value('Unknown'),
+            output_field=CharField()
+        )
+        
+        age_data = base_query.annotate(age_group=age_groups).values('age_group') \
+            .annotate(count=Count('id')).order_by('age_group')
+        
+        categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
+        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+        age_dict = {item['age_group']: item['count'] for item in age_data}
+        
+        data = {
+            'labels': categories,
+            'data': [age_dict.get(cat, 0) for cat in categories],
+            'colors': colors
+        }
+        
+    elif type == 'gender':
+        gender_data = base_query.values('gender') \
+            .annotate(count=Count('id')).order_by('gender')
+        
+        categories = ['Male', 'Female', 'Other', 'Unknown']
+        colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
+        gender_map = {'M': 'Male', 'F': 'Female', 'O': 'Other'}
+        gender_dict = {gender_map.get(item['gender'], 'Unknown'): item['count'] for item in gender_data}
+        
+        data = {
+            'labels': categories,
+            'data': [gender_dict.get(cat, 0) for cat in categories],
+            'colors': colors
+        }
+    
+    return JsonResponse(data)
+
+def get_ophthalmology_cases(request):
+    # 0. District filtering
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # 1. Date references
+    today = timezone.now().date()
+    yesterday = today - timedelta(days=1)
+    thirty_days_ago = today - timedelta(days=30)
+
+    # 2. Build hospital capacity map: OT_count * surgeon_count * 30
+    hosp_info = SuspiciousHospital.objects.values(
+        'hospital_id', 'number_of_ot', 'number_of_surgeons'
+    )
+    capacity_map = {
+        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
+        for h in hosp_info
+    }
+
+    # 3. Base queryset: private hospitals, cataract code SE020A
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE'
+    )
+    if districts:
         base_qs = base_qs.filter(district_name__in=districts)
 
-    # 1. Age <40 cases
-    age_cases = base_qs.filter(age_years__lt=40)
-    
-    # 2. OT Cases (more than 30 per OT per surgeon)
-    ot_violations = base_qs.values('hospital_id').annotate(
-        ot_count=Count('id')
-    ).filter(ot_count__gt=30)
-    
-    # 3. Preauth time violations (outside 8AM-6PM)
-    preauth_violations = base_qs.exclude(
-        preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
+    # 4. Age < 40 segment
+    age_qs = base_qs.filter(age_years__lt=40)
+
+    # 5. Preauth‑time violations (outside 08:00–17:59:59)
+    preauth_qs = base_qs.exclude(
+        Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
     )
 
-    # Time period filters
-    def apply_time_filter(qs, day):
-        return qs.filter(
-            Q(admission_date__date=day) | 
+    # Helper: count cases per hospital for a given date
+    def counts_by_hospital_for_date(day):
+        qs = base_qs.filter(
+            Q(admission_date__date=day) |
             Q(admission_date__isnull=True, preauth_initiated_date__date=day)
         )
-    
-    # Calculate totals
-    age_total = age_cases.count()
-    ot_total = ot_violations.count()
-    preauth_total = preauth_violations.count()
-    
-    # MAIN CARD VALUE = Sum of all violations
-    main_card_total = age_total + ot_total + preauth_total
+        return qs.values('hospital_id').annotate(case_count=Count('id'))
 
+    # 6. OT violations today
+    today_counts = counts_by_hospital_for_date(today)
+    ot_violations_today = [
+        {'hospital_id': rec['hospital_id'],
+         'case_count': rec['case_count'],
+         'capacity': capacity_map.get(rec['hospital_id'], 0)}
+        for rec in today_counts
+        if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0)
+    ]
+    ot_total = len(ot_violations_today)
+
+    # 7. OT violations yesterday
+    yest_counts = counts_by_hospital_for_date(yesterday)
+    ot_yesterday = sum(
+        1 for rec in yest_counts
+        if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0)
+    )
+
+    # 8. OT violations in last 30 days (distinct hospital×day)
+    overflow_days = set()
+    for n in range(30):
+        day = today - timedelta(days=n)
+        for rec in counts_by_hospital_for_date(day):
+            if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0):
+                overflow_days.add((rec['hospital_id'], day))
+    ot_last_30 = len(overflow_days)
+
+    # 9. Prepare top-5 detail list for today
+    #    (also fetch hospital names)
+    hosp_names = dict(
+        Last24Hour.objects
+        .filter(hospital_id__in=[v['hospital_id'] for v in ot_violations_today])
+        .values_list('hospital_id', 'hospital_name')
+        .distinct()
+    )
+    ot_details = []
+    for rec in sorted(ot_violations_today, key=lambda x: x['case_count'], reverse=True)[:5]:
+        hid = rec['hospital_id']
+        ot_details.append({
+            'hospital_id': hid,
+            'hospital_name': hosp_names.get(hid, f"Hospital {hid}"),
+            'cases': rec['case_count'],
+            'capacity': rec['capacity']
+        })
+
+    # 10. Age <40 totals
+    def date_count(qs, day):
+        return qs.filter(
+            Q(admission_date__date=day) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=day)
+        ).count()
+
+    age_total = age_qs.count()
+    age_yesterday = date_count(age_qs, yesterday)
+    age_last_30 = age_qs.filter(
+        Q(admission_date__date__gte=thirty_days_ago, admission_date__date__lte=today) |
+        Q(admission_date__isnull=True,
+          preauth_initiated_date__date__gte=thirty_days_ago,
+          preauth_initiated_date__date__lte=today)
+    ).count()
+
+    # 11. Preauth‑time totals
+    preauth_total = preauth_qs.count()
+    preauth_yesterday = date_count(preauth_qs, yesterday)
+    preauth_last_30 = preauth_qs.filter(
+        Q(admission_date__date__gte=thirty_days_ago, admission_date__date__lte=today) |
+        Q(admission_date__isnull=True,
+          preauth_initiated_date__date__gte=thirty_days_ago,
+          preauth_initiated_date__date__lte=today)
+    ).count()
+
+    # 12. Calculate true unique total
+    today = timezone.now().date()
+    hospital_counts = base_qs.filter(
+        Q(admission_date__date=today) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+    ).values('hospital_id').annotate(case_count=Count('id'))
+    
+    violating_hospitals = [
+        h['hospital_id'] for h in hospital_counts 
+        if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+    ]
+    
+    unique_violations = base_qs.filter(
+        Q(age_years__lt=40) |
+        Q(hospital_id__in=violating_hospitals) |
+        ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+    ).count()
+
+    # 13. Build Response
     data = {
-        'total': main_card_total,  # Sum of all violations
+        'total': unique_violations,
         'age_under_40': {
             'total': age_total,
-            'yesterday': apply_time_filter(age_cases, yesterday).count(),
-            'last_30_days': apply_time_filter(age_cases, thirty_days_ago).count()
+            'yesterday': age_yesterday,
+            'last_30_days': age_last_30
         },
         'ot_cases': {
             'total': ot_total,
-            'yesterday': apply_time_filter(ot_violations, yesterday).count(),
-            'last_30_days': apply_time_filter(ot_violations, thirty_days_ago).count(),
-            'violations': list(ot_violations.values('hospital_name', 'ot_count')[:5])
+            'yesterday': ot_yesterday,
+            'last_30_days': ot_last_30,
+            'violations': ot_details
         },
         'preauth_time': {
             'total': preauth_total,
-            'yesterday': apply_time_filter(preauth_violations, yesterday).count(),
-            'last_30_days': apply_time_filter(preauth_violations, thirty_days_ago).count(),
-            'avg_violation_hours': "N/A" 
+            'yesterday': preauth_yesterday,
+            'last_30_days': preauth_last_30,
+            'avg_violation_hours': None
         }
     }
-    
+
     return JsonResponse(data)
+
+def get_ophthalmology_details(request):
+    violation_type = request.GET.get('type', 'all')
+    district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    
+    # Get hospital capacity data
+    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
+    capacity_map = {
+        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
+        for h in hosp_info
+    }
+
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE'
+    )
+    
+    if district_param:
+        districts = district_param.split(',')
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # Violation filters
+    if violation_type == 'age':
+        cases = base_qs.filter(age_years__lt=40)
+    elif violation_type == 'ot':
+        # Get today's OT violations
+        today = timezone.now().date()
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        cases = base_qs.filter(hospital_id__in=violating_hospitals)
+    elif violation_type == 'preauth':
+        cases = base_qs.exclude(
+            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
+        )
+    else:  # All
+        today = timezone.now().date()
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        
+        cases = base_qs.filter(
+            Q(age_years__lt=40) |
+            Q(hospital_id__in=violating_hospitals) |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+        )
+
+    paginator = Paginator(cases, page_size)
+    page_obj = paginator.get_page(page)
+
+    data = []
+    for idx, case in enumerate(page_obj.object_list, 1):
+        row = {
+            'serial_no': (page_obj.number - 1) * page_size + idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
+            'district_name': case.district_name or 'N/A',
+            'amount': case.claim_initiated_amount or 0,
+            'age': case.age_years,
+            'preauth_time': case.preauth_initiated_time,
+        }
+        
+        # Determine violations
+        is_ot_violation = case.hospital_id in violating_hospitals if violation_type in ['all', 'ot'] else False
+        is_age_violation = case.age_years < 40 if case.age_years else False
+        is_time_violation = not re.match(r'^(0[8-9]|1[0-7]):', case.preauth_initiated_time) if case.preauth_initiated_time else False
+        
+        if violation_type == 'all':
+            row.update({
+                'age_violation': is_age_violation,
+                'ot_violation': is_ot_violation,
+                'preauth_violation': is_time_violation
+            })
+        else:
+            row[f'{violation_type}_violation'] = True
+
+        data.append(row)
+
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
+
+def get_ophthalmology_distribution(request):
+    violation_type = request.GET.get('type', 'all')
+    district_param = request.GET.get('district', '')
+    
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE'
+    )
+
+    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
+    capacity_map = {
+        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
+        for h in hosp_info
+    }
+
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code='SE020A'
+    )
+    
+    if district_param:
+        districts = district_param.split(',')
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # Similar violation filtering logic as get_ophthalmology_details
+    if violation_type == 'age':
+        cases = base_qs.filter(age_years__lt=40)
+    elif violation_type == 'ot':
+        # Get today's OT violations
+        today = timezone.now().date()
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        cases = base_qs.filter(hospital_id__in=violating_hospitals)
+    elif violation_type == 'preauth':
+        cases = base_qs.exclude(
+            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
+        )
+    else:  # All
+        today = timezone.now().date()
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        
+        cases = base_qs.filter(
+            Q(age_years__lt=40) |
+            Q(hospital_id__in=violating_hospitals) |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+        )
+
+    district_data = base_qs.values('district_name').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    return JsonResponse({
+        'districts': [d['district_name'] or 'Unknown' for d in district_data],
+        'counts': [d['count'] for d in district_data]
+    })
+
+def get_ophthalmology_demographics(request, type):
+    violation_type = request.GET.get('violation_type', 'all')
+    district_param = request.GET.get('district', '')
+    
+    # Get hospital capacity data
+    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
+    capacity_map = {
+        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
+        for h in hosp_info
+    }
+
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code='SE020A'
+    )
+    
+    if district_param:
+        districts = district_param.split(',')
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    today = timezone.now().date()
+
+    # Violation filters
+    if violation_type == 'age':
+        base_qs = base_qs.filter(age_years__lt=40)
+    elif violation_type == 'ot':
+        # Get today's OT violations using capacity map
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        base_qs = base_qs.filter(hospital_id__in=violating_hospitals)
+    elif violation_type == 'preauth':
+        base_qs = base_qs.exclude(
+            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
+        )
+    else:  # All violations
+        # Get OT violations
+        hospital_counts = base_qs.filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        ).values('hospital_id').annotate(case_count=Count('id'))
+        
+        violating_hospitals = [
+            h['hospital_id'] for h in hospital_counts 
+            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
+        ]
+        
+        # Combine all violation types
+        base_qs = base_qs.filter(
+            Q(age_years__lt=40) |
+            Q(hospital_id__in=violating_hospitals) |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+        )
+
+    if type == 'age':
+        age_groups = Case(
+            When(age_years__lt=20, then=Value('≤20')),
+            When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
+            When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
+            When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
+            When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
+            When(age_years__gte=60, then=Value('60+')),
+            default=Value('Unknown'),
+            output_field=CharField()
+        )
+        
+        age_data = base_qs.annotate(age_group=age_groups).values('age_group') \
+            .annotate(count=Count('id')).order_by('age_group')
+        
+        categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
+        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+        
+        age_dict = {item['age_group']: item['count'] for item in age_data}
+        
+        return JsonResponse({
+            'labels': categories,
+            'data': [age_dict.get(cat, 0) for cat in categories],
+            'colors': colors
+        })
+        
+    elif type == 'gender':
+        gender_data = base_qs.values('gender') \
+            .annotate(count=Count('id')).order_by('gender')
+        
+        categories = ['Male', 'Female', 'Other', 'Unknown']
+        colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
+        
+        gender_map = {
+            'M': 'Male',
+            'F': 'Female',
+            'O': 'Other'
+        }
+        
+        formatted = {gender_map.get(g['gender'], 'Unknown'): g['count'] for g in gender_data}
+        return JsonResponse({
+            'labels': categories,
+            'data': [formatted.get(cat, 0) for cat in categories],
+            'colors': colors
+        })
 
 def get_age_distribution(request):
     district_param = request.GET.get('district', '')
@@ -797,6 +1544,62 @@ def get_gender_distribution(request):
         'data': data,
         'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
     })
+
+def download_flagged_claims(request):
+    # 1. Read the same filter param
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # 2. Build the same queryset (no pagination)
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    qs = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P')
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 3. Assemble data into a list of dicts
+    rows = []
+    for case in qs:
+        rows.append({
+            'Claim ID': case.registration_id or case.case_id or 'N/A',
+            'Patient Name': case.patient_name or f"Patient {case.member_id}",
+            'Hospital Name': case.hospital_name or 'N/A',
+            'District': case.district_name or 'N/A',
+            'Amount': case.claim_initiated_amount or 0,
+            'Reason': 'Suspicious hospital',
+        })
+
+    # 4. Create a DataFrame
+    df = pd.DataFrame(rows)
+
+    # 5. Write to an in-memory Excel file
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Flagged Claims')
+        workbook  = writer.book
+        worksheet = writer.sheets['Flagged Claims']
+
+        # Style: red fill + white font for any cell whose value matches
+        red_fill   = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
+        white_font = Font(color='FFFFFFFF')
+
+        # Find all cells in the sheet, check value
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.strip().lower() == 'suspicious hospital':
+                    cell.fill = red_fill
+                    cell.font = white_font
+
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="flagged_claims.xlsx"'
+    return response
 
 @login_required(login_url='login')
 def dashboard_view(request):

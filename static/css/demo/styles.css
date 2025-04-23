@@ -1166,7 +1166,7 @@ white-space: nowrap;
 
 .chart-container {
     position: relative;
-    margin-top: 30px;
+    margin-top: 10px;
     background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
     padding: 20px;
     border-radius: 8px;
@@ -1180,8 +1180,9 @@ white-space: nowrap;
 }
 
 .chart-container h4 {
+    margin-top: -5px;
     color: #2c3e50;
-    margin-bottom: 15px;
+    /* margin-bottom: px; */
     font-weight: 600;
 }
 
@@ -1216,7 +1217,7 @@ white-space: nowrap;
 .chart-wrapper {
     position: relative;
     height: 300px;
-    margin-top: 15px;
+    margin-top: 1px;
 }
 
 .chart-actions {
@@ -1260,6 +1261,8 @@ white-space: nowrap;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.21);
     border: 1px solid rgba(0, 0, 0, 0.08);
     transition: transform 0.3s ease;
+    text-align: left;
+    color: black;
 }
 
 .pie-card:hover {
@@ -1277,6 +1280,7 @@ white-space: nowrap;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border-left: 4px solid #4e73df;
+    color: rgb(0, 0, 0);
 }
 
 .callout-item {
@@ -1317,4 +1321,263 @@ white-space: nowrap;
 }
 
 .case-type-surgical { color: #dc3545; font-weight: bold; }
-.case-type-medical { color: #28a745; font-weight: bold; }
+.case-type-medical { color: #2e28a7; font-weight: bold; }
+
+.table-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.page-size-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.page-size-selector select {
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.table-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+    padding: 10px 0;
+    border-top: 1px solid #eee;
+}
+
+.pagination-info {
+    color: #666;
+    font-size: 14px;
+}
+
+.pagination-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.page-btn {
+    padding: 5px 10px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.page-btn:hover:not(.disabled) {
+    background: #f5f5f5;
+}
+
+.page-btn.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.page-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.page-dots {
+    padding: 5px 10px;
+}
+
+.combined-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #05c793;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.medical-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #0508c7;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.surgical-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #c7054c;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.combined-pie-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #05c793;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.medical-pie-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #0508c7;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.surgical-pie-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #c7054c;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+/* Add to existing CSS */
+.data-table tr[style*="background-color"] td {
+    border-bottom: 2px solid #ffffff;
+}
+
+.data-table tr[style*="background-color"]:hover td {
+    filter: brightness(95%);
+}
+
+.excess-row {
+    background-color: #ffebee;
+    transition: background-color 0.2s;
+}
+
+.excess-row:hover {
+    background-color: #ffcdd2;
+}
+
+.excess-cell {
+    color: #c62828;
+    font-weight: 700;
+    text-align: center;
+}
+
+.page-dots {
+    padding: 0 8px;
+    color: #666;
+}
+
+.hospital-page-btn.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.age-violation { background-color: #FFEB3B !important; }
+.ot-violation { background-color: #E91E63 !important; }
+.preauth-violation { background-color: #009688 !important; }
+
+.violation-type-btn {
+    padding: 8px 16px;
+    margin: 0 4px;
+    border-radius: 20px;
+    transition: all 0.3s;
+}
+.violation-type-btn.active {
+    color: white;
+    border-color: transparent;
+}
+.violation-type-btn[data-type="all"].active { background: linear-gradient(45deg, #FFEB3B, #E91E63, #009688); }
+.violation-type-btn[data-type="age"].active { background: #FFEB3B; color: #000; }
+.violation-type-btn[data-type="ot"].active { background: #E91E63; }
+.violation-type-btn[data-type="preauth"].active { background: #009688; }
+
+.pie-card-group {
+    margin: 20px 0;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.sub-violation-header {
+    color: #666;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+.dual-pie-sub {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.ophthalmology-combined-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #bf54c9;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.ophthalmology-age-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #ccd21d;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.ophthalmology-ot-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #d4527b;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+.ophthalmology-preauth-bar-header {
+    color: white;
+    margin-top: 40px;
+    margin-bottom: -30px;
+    position: relative;
+    background-color: #05c793;
+    padding: 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    text-align: center;
+}

@@ -199,6 +199,21 @@ $(document).ready(function() {
         });
     }
 
+    $(function(){
+        $('#download-flagged').on('click', function(){
+          const baseUrl  = $(this).data('download-url');
+          const district = $(this).data('district') || '';
+    
+          let url = baseUrl;
+          if (district) {
+            url += '?district=' + encodeURIComponent(district);
+          }
+          // this will now be something like
+          // "/flagged-claims/download/?district=Bihar,Patna"
+          window.location.href = url;
+        });
+    });
+
     function updateHighValueClaims(districts = []) {
         // If null (All Districts unchecked), show empty state
         if (districts === null) {
@@ -373,9 +388,20 @@ $(document).ready(function() {
             content: `
                 <!-- Table -->
                 <div class="data-table-container">
-                    <button class="table-download-btn">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="flaggedPageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -391,7 +417,11 @@ $(document).ready(function() {
                         <tbody id="flaggedClaimsData"></tbody>
                     </table>
                     <div class="table-footer">
-                        Showing <span id="rowCount">0</span> records
+                        <div class="pagination-info">
+                            Showing <span id="flaggedStartRecord">0</span> to <span id="flaggedEndRecord">0</span> 
+                            of <span id="flaggedTotalRecords">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="flaggedPaginationControls"></div>
                     </div>
                 </div>
 
@@ -424,80 +454,267 @@ $(document).ready(function() {
                 </div>
             `,
             postRender: function(districts) {
-                console.log("Starting data load for districts:", districts); // Debug log
-                
-                const tableUrl = '/get-flagged-claims-details/' + 
-                    (districts.length ? `?district=${districts.join(',')}` : '');
-                
-                console.log("Fetching table data from:", tableUrl); // Debug log
-                
-                fetch(tableUrl, {
+                this.initPagination(districts);
+                this.loadTableData(districts);
+                this.loadChartData(districts);
+            },
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.totalPages = 1;
+                this.districts = districts;
+    
+                // Event listeners
+                $('#flaggedPageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#flaggedPageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(this.districts);
+                });
+    
+                $(document).off('click', '.flagged-page-btn').on('click', '.flagged-page-btn', (e) => {
+                    e.preventDefault();
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(this.districts);
+                    }
+                });
+            },
+            loadTableData: function(districts) {
+                const url = `/get-flagged-claims-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+    
+                fetch(url, {
                     headers: {
                         'X-CSRFToken': getCookie('csrftoken')
                     }
                 })
-                    .then(response => {
-                        console.log("Table response status:", response.status); // Debug log
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log("Received table data:", data); // Debug log
-                        const tableBody = document.getElementById('flaggedClaimsData');
-                        tableBody.innerHTML = data.map(item => `
-                            <tr>
-                                <td>${item.serial_no}</td>
-                                <td>${item.claim_id}</td>
-                                <td>${item.patient_name}</td>
-                                <td>${item.hospital_name}</td>
-                                <td>${item.district_name}</td>
-                                <td>₹${item.amount.toLocaleString('en-IN')}</td>
-                                <td><span class="status-badge ${item.reason === 'Suspicious hospital' ? 'danger' : 'warning'}">
-                                    ${item.reason}
-                                </span></td>
-                            </tr>
-                        `).join('');
-                        
-                        document.getElementById('rowCount').textContent = data.length;
-            
-                        // Now load chart data
-                        const chartUrl = '/get-flagged-claims-by-district/' + 
-                            (districts.length ? `?district=${districts.join(',')}` : '');
-                        
-                        console.log("Fetching chart data from:", chartUrl); // Debug log
-                        
-                        return fetch(chartUrl);
-
-                    })
-                    .then(response => {
-                        console.log("Chart response status:", response.status); // Debug log
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
+                .then(response => response.json())
+                .then(response => {
+                    const tableBody = document.getElementById('flaggedClaimsData');
+                    tableBody.innerHTML = response.data.map(item => `
+                        <tr>
+                            <td>${item.serial_no}</td>
+                            <td>${item.claim_id}</td>
+                            <td>${item.patient_name}</td>
+                            <td>${item.hospital_name}</td>
+                            <td>${item.district_name}</td>
+                            <td>₹${item.amount.toLocaleString('en-IN')}</td>
+                            <td><span class="status-badge ${item.reason === 'Suspicious hospital' ? 'danger' : 'warning'}">
+                                ${item.reason}
+                            </span></td>
+                        </tr>
+                    `).join('');
+    
+                    this.updatePaginationUI(response.pagination);
+                })
+                .catch(error => {
+                    console.error('Error loading data:', error);
+                    document.getElementById('flaggedClaimsData').innerHTML = `
+                        <tr>
+                            <td colspan="7" class="error-message">
+                                Failed to load data. ${error.message}
+                            </td>
+                        </tr>
+                    `;
+                });
+            },
+            updatePaginationUI: function(paginationData) {
+                this.totalPages = paginationData.total_pages;
+    
+                // Update record count info
+                const start = ((this.currentPage - 1) * this.pageSize) + 1;
+                const end = Math.min(start + this.pageSize - 1, paginationData.total_records);
+                $('#flaggedStartRecord').text(start);
+                $('#flaggedEndRecord').text(end);
+                $('#flaggedTotalRecords').text(paginationData.total_records);
+    
+                // Generate pagination buttons
+                const paginationControls = $('#flaggedPaginationControls');
+                paginationControls.empty();
+    
+                // Previous button
+                paginationControls.append(`
+                    <button class="flagged-page-btn ${paginationData.has_previous ? '' : 'disabled'}" 
+                            data-page="${this.currentPage - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+    
+                // Page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+    
+                if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+    
+                if (startPage > 1) {
+                    paginationControls.append(`
+                        <button class="flagged-page-btn" data-page="1">1</button>
+                        ${startPage > 2 ? '<span class="page-dots">...</span>' : ''}
+                    `);
+                }
+    
+                for (let i = startPage; i <= endPage; i++) {
+                    paginationControls.append(`
+                        <button class="flagged-page-btn ${i === this.currentPage ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+    
+                if (endPage < this.totalPages) {
+                    paginationControls.append(`
+                        ${endPage < this.totalPages - 1 ? '<span class="page-dots">...</span>' : ''}
+                        <button class="flagged-page-btn" data-page="${this.totalPages}">
+                            ${this.totalPages}
+                        </button>
+                    `);
+                }
+    
+                // Next button
+                paginationControls.append(`
+                    <button class="flagged-page-btn ${paginationData.has_next ? '' : 'disabled'}" 
+                            data-page="${this.currentPage + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            },
+            loadChartData: function(districts) {
+                // Load bar chart data
+                const chartUrl = `/get-flagged-claims-by-district/?district=${districts.join(',')}`;
+                
+                fetch(chartUrl)
+                    .then(response => response.json())
                     .then(chartData => {
-                        console.log("Received chart data:", chartData); // Debug log
-                        renderFlaggedClaimsChart(chartData);
-                        initDemographicCharts(districts);
+                        this.renderFlaggedClaimsChart(chartData);
+                        this.loadDemographicCharts(districts);
                     })
-                    .catch(error => {
-                        console.error('Error loading data:', error);
-                        // Show error in console and on page
-                        const errorElement = document.createElement('div');
-                        errorElement.className = 'error-message';
-                        errorElement.textContent = `Error: ${error.message}`;
-                        document.getElementById('flaggedClaimsData').innerHTML = `
-                            <tr>
-                                <td colspan="7" class="error-message">
-                                    Failed to load data. ${error.message}
-                                </td>
-                            </tr>
-                        `;
-                    });
-            }
+                    .catch(error => console.error('Chart load error:', error));
+            },
+            
+            renderFlaggedClaimsChart: function(chartData) {
+                const canvas = document.getElementById('flaggedClaimsChart');
+                if (!canvas) return;
+                
+                const ctx = canvas.getContext('2d');
+                
+                // Destroy existing chart
+                // if (window.flaggedClaimsChart) {
+                //     window.flaggedClaimsChart.destroy();
+                // }
+                
+                window.flaggedClaimsChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: chartData.districts,
+                        datasets: [{
+                            label: 'Flagged Claims',
+                            data: chartData.counts,
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.parsed.y} claims`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Claims' },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { display: true, text: 'Districts' },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            
+            loadDemographicCharts: function(districts) {
+                // Load age distribution
+                fetch(`/get-age-distribution/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderDemographicChart('agePieChart', data, 'ageCallouts'));
+                
+                // Load gender distribution
+                fetch(`/get-gender-distribution/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderDemographicChart('genderPieChart', data, 'genderCallouts'));
+            },
+            
+            renderDemographicChart: function(canvasId, data, calloutId) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+                
+                // Destroy existing chart
+                // if (window[canvasId]) {
+                //     window[canvasId].destroy();
+                // }
+                
+                window[canvasId] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors,
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => {
+                                        const total = context.dataset.data.reduce((a, b) => a + b);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                this.generateDemographicCallouts(data, calloutId);
+            },
+            
+            generateDemographicCallouts: function(data, containerId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                const total = data.data.reduce((a, b) => a + b, 0);
+                container.innerHTML = data.labels.map((label, i) => `
+                    <div class="callout-item">
+                        <span class="callout-color" style="background:${data.colors[i]}"></span>
+                        <strong>${label}:</strong> 
+                        ${data.data[i]} (${Math.round((data.data[i]/total)*100)}%)
+                    </div>
+                `).join('');
+            },
+        
         },
         'high-value': {
             title: "High Value Claims",
@@ -510,9 +727,20 @@ $(document).ready(function() {
                 
                 <!-- Table Container -->
                 <div class="data-table-container">
-                    <button class="table-download-btn">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="pageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -528,14 +756,106 @@ $(document).ready(function() {
                         <tbody id="highValueClaimsData"></tbody>
                     </table>
                     <div class="table-footer">
-                        Showing <span id="highValueRowCount">0</span> records
+                        <div class="pagination-info">
+                            Showing <span id="startRecord">0</span> to <span id="endRecord">0</span> of <span id="totalRecords">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="paginationControls"></div>
                     </div>
                 </div>
 
                 <!-- Charts Container -->
                 <div class="charts-container" id="highValueCharts"></div>
             `,
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.totalPages = 1;
+                this.districts = districts;
+                
+                // Event listeners
+                $('#pageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#pageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(this.currentCaseType, this.districts);
+                });
+                
+                $(document).off('click', '.page-btn').on('click', '.page-btn', (e) => {
+                    e.preventDefault();
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(this.currentCaseType, this.districts);
+                    }
+                });
+            },
+            
+            updatePaginationUI: function(paginationData) {
+                this.totalPages = paginationData.total_pages;
+                
+                // Update record count info
+                const start = ((this.currentPage - 1) * this.pageSize) + 1;
+                const end = Math.min(start + this.pageSize - 1, paginationData.total_records);
+                $('#startRecord').text(start.toLocaleString());
+                $('#endRecord').text(end.toLocaleString());
+                $('#totalRecords').text(paginationData.total_records.toLocaleString());
+                
+                // Generate pagination buttons
+                const paginationControls = $('#paginationControls');
+                paginationControls.empty();
+                
+                // Previous button
+                paginationControls.append(`
+                    <button class="page-btn ${paginationData.has_previous ? '' : 'disabled'}" 
+                            data-page="${this.currentPage - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+                
+                // Page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+                
+                if (startPage > 1) {
+                    paginationControls.append(`
+                        <button class="page-btn" data-page="1">1</button>
+                        ${startPage > 2 ? '<span class="page-dots">...</span>' : ''}
+                    `);
+                }
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    paginationControls.append(`
+                        <button class="page-btn ${i === this.currentPage ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+                
+                if (endPage < this.totalPages) {
+                    paginationControls.append(`
+                        ${endPage < this.totalPages - 1 ? '<span class="page-dots">...</span>' : ''}
+                        <button class="page-btn" data-page="${this.totalPages}">
+                            ${this.totalPages}
+                        </button>
+                    `);
+                }
+                
+                // Next button
+                paginationControls.append(`
+                    <button class="page-btn ${paginationData.has_next ? '' : 'disabled'}" 
+                            data-page="${this.currentPage + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            },
+
             postRender: function(districts) {
+                this.initPagination(districts);
                 const initialType = 'all';
                 this.handleCaseTypeChange(initialType, districts);
                 this.initCaseTypeButtons(districts);
@@ -545,13 +865,14 @@ $(document).ready(function() {
                 this.loadCharts(caseType, districts);
             },
             loadTableData: function(caseType, districts) {
-                const url = `/get-high-value-claims-details/?case_type=${caseType}&district=${districts.join(',')}`;
+                this.currentCaseType = caseType;
+                const url = `/get-high-value-claims-details/?case_type=${caseType}&district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
                 
                 fetch(url)
                     .then(response => response.json())
-                    .then(data => {
+                    .then(response => {
                         const tbody = document.getElementById('highValueClaimsData');
-                        tbody.innerHTML = data.map(item => `
+                        tbody.innerHTML = response.data.map(item => `
                             <tr>
                                 <td>${item.serial_no}</td>
                                 <td>${item.claim_id}</td>
@@ -562,7 +883,8 @@ $(document).ready(function() {
                                 <td class="case-type-${item.case_type.toLowerCase()}">${item.case_type}</td>
                             </tr>
                         `).join('');
-                        document.getElementById('highValueRowCount').textContent = data.length;
+                        // document.getElementById('highValueRowCount').textContent = data.length;
+                        this.updatePaginationUI(response.pagination);
                     })
                     .catch(error => console.error('Table load error:', error));
             },
@@ -571,56 +893,74 @@ $(document).ready(function() {
                 container.innerHTML = caseType === 'all' ? `
                     <div class="chart-group">
                         <!-- Bar Charts -->
-                        <div class="chart-container">
-                            <h4>Combined District Distribution</h4>
-                            <canvas id="highValueAllChart"></canvas>
+                        <div class="combined-bar-header">
+                            <h2>COMBINED</h2>
+                            <div class="chart-container">
+                                <h4>Combined District Distribution</h4>
+                                <canvas id="highValueAllChart"></canvas>
+                            </div>
                         </div>
-                        <div class="chart-container">
-                            <h4>Medical Cases Distribution</h4>
-                            <canvas id="highValueMedicalChart"></canvas>
+                        <div class="medical-bar-header">
+                            <h2>MEDICAL</h2>
+                            <div class="chart-container">
+                                <h4>Medical Cases Distribution</h4>
+                                <canvas id="highValueMedicalChart"></canvas>
+                            </div>
                         </div>
-                        <div class="chart-container">
-                            <h4>Surgical Cases Distribution</h4>
-                            <canvas id="highValueSurgicalChart"></canvas>
+                        <div class="surgical-bar-header">
+                            <h2>SURGICAL</h2>
+                            <div class="chart-container">
+                                <h4>Surgical Cases Distribution</h4>
+                                <canvas id="highValueSurgicalChart"></canvas>
+                            </div>
                         </div>
                         
                         <!-- Pie Charts -->
-                        <div class="dual-pie-container">
-                            <div class="pie-card">
-                                <h4>Combined Age Distribution</h4>
-                                <canvas id="highValueAllAgeChart"></canvas>
-                                <div class="chart-callouts" id="highValueAllAgeCallouts"></div>
-                            </div>
-                            <div class="pie-card">
-                                <h4>Combined Gender Distribution</h4>
-                                <canvas id="highValueAllGenderChart"></canvas>
-                                <div class="chart-callouts" id="highValueAllGenderCallouts"></div>
-                            </div>
-                        </div>
-                        
-                        <div class="dual-pie-container">
-                            <div class="pie-card">
-                                <h4>Medical Age Distribution</h4>
-                                <canvas id="highValueMedicalAgeChart"></canvas>
-                                <div class="chart-callouts" id="highValueMedicalAgeCallouts"></div>
-                            </div>
-                            <div class="pie-card">
-                                <h4>Medical Gender Distribution</h4>
-                                <canvas id="highValueMedicalGenderChart"></canvas>
-                                <div class="chart-callouts" id="highValueMedicalGenderCallouts"></div>
+                        <div class="combined-pie-header">
+                            <h2>COMBINED</h2>
+                            <div class="dual-pie-container">
+                                <div class="pie-card">
+                                    <h4>Combined Age Distribution</h4>
+                                    <canvas id="highValueAllAgeChart"></canvas>
+                                    <div class="chart-callouts" id="highValueAllAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Combined Gender Distribution</h4>
+                                    <canvas id="highValueAllGenderChart"></canvas>
+                                    <div class="chart-callouts" id="highValueAllGenderCallouts"></div>
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="dual-pie-container">
-                            <div class="pie-card">
-                                <h4>Surgical Age Distribution</h4>
-                                <canvas id="highValueSurgicalAgeChart"></canvas>
-                                <div class="chart-callouts" id="highValueSurgicalAgeCallouts"></div>
+                        <div class="medical-pie-header">
+                            <h2>MEDICAL</h2>
+                            <div class="dual-pie-container">
+                                <div class="pie-card">
+                                    <h4>Medical Age Distribution</h4>
+                                    <canvas id="highValueMedicalAgeChart"></canvas>
+                                    <div class="chart-callouts" id="highValueMedicalAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Medical Gender Distribution</h4>
+                                    <canvas id="highValueMedicalGenderChart"></canvas>
+                                    <div class="chart-callouts" id="highValueMedicalGenderCallouts"></div>
+                                </div>
                             </div>
-                            <div class="pie-card">
-                                <h4>Surgical Gender Distribution</h4>
-                                <canvas id="highValueSurgicalGenderChart"></canvas>
-                                <div class="chart-callouts" id="highValueSurgicalGenderCallouts"></div>
+                        </div>
+                        
+                        <div class="surgical-pie-header">
+                            <h2>SURGICAL</h2>
+                            <div class="dual-pie-container">
+                                <div class="pie-card">
+                                    <h4>Surgical Age Distribution</h4>
+                                    <canvas id="highValueSurgicalAgeChart"></canvas>
+                                    <div class="chart-callouts" id="highValueSurgicalAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Surgical Gender Distribution</h4>
+                                    <canvas id="highValueSurgicalGenderChart"></canvas>
+                                    <div class="chart-callouts" id="highValueSurgicalGenderCallouts"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -799,7 +1139,7 @@ $(document).ready(function() {
                     <div class="callout-item">
                         <span class="callout-color" style="background:${data.colors[i]}"></span>
                         <strong>${label}:</strong> 
-                        ${data.data[i]} (${Math.round((data.data[i]/total))*100}%)
+                        ${data.data[i]} (${Math.round((data.data[i]/total)*100)}%)
                     </div>
                 `).join('');
             },
@@ -819,72 +1159,1331 @@ $(document).ready(function() {
             }
         },
         'hospital-beds': {
-            title: "Hospital Bed Cases",
-            content: `<div class="card-details">
-                        <h4>Hospital Bed Violations</h4>
-                        <div class="violation-list">
-                            <div class="violation-item">
-                                <span>Exceeded Capacity:</span>
-                                <span>87 cases</span>
-                            </div>
+            title: "Hospital Bed Violations Analysis",
+            content: `
+                <div class="data-table-container">
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="hospitalPageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
                         </div>
-                      </div>`
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Hospital ID</th>
+                                <th>Hospital Name</th>
+                                <th>District</th>
+                                <th>State</th>
+                                <th>Bed Capacity</th>
+                                <th>Admissions</th>
+                                <th>Excess</th>
+                                <th>Last Violation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hospitalBedData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        <div class="pagination-info">
+                            Showing <span id="hospitalStart">0</span> to 
+                            <span id="hospitalEnd">0</span> of 
+                            <span id="hospitalTotal">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="hospitalPagination"></div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h4>District-wise Bed Violations</h4>
+                    <canvas id="hospitalDistrictChart"></canvas>
+                    <div class="chart-legend" id="hospitalDistrictLegend"></div>
+                </div>
+            `,
+            postRender: function(districts) {
+                this.initPagination(districts);
+                this.loadTableData(districts);
+                this.loadChartData(districts);
+            },
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.districts = districts;
+
+                $('#hospitalPageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#hospitalPageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(districts);
+                });
+
+                $(document).off('click', '.hospital-page-btn').on('click', '.hospital-page-btn', (e) => {
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(districts);
+                    }
+                });
+            },
+            loadTableData: function(districts) {
+                const url = `/get-hospital-bed-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(response => {
+                        const tbody = document.getElementById('hospitalBedData');
+                        tbody.innerHTML = response.data.map(item => `
+                            <tr class="${item.excess > 0 ? 'excess-row' : ''}">
+                                <td>${item.serial_no}</td>
+                                <td>${item.hospital_id}</td>
+                                <td>${item.hospital_name}</td>
+                                <td>${item.district}</td>
+                                <td>${item.state}</td>
+                                <td>${item.bed_capacity}</td>
+                                <td>${item.admissions}</td>
+                                <td class="excess-cell">${item.excess}</td>
+                                <td>${item.last_violation}</td>
+                            </tr>
+                        `).join('');
+                        this.updatePaginationUI(response.pagination);
+                    })
+                    .catch(error => console.error('Table load error:', error));
+            },
+            loadChartData: function(districts) {
+                fetch(`/hospital-violations-by-district/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderBarChart(data));
+            },
+            renderBarChart: function(data) {
+                const ctx = document.getElementById('hospitalDistrictChart')?.getContext('2d');
+                if (!ctx) return;
+
+                if (window.hospitalDistrictChart) {
+                    window.hospitalDistrictChart.destroy();
+                }
+
+                window.hospitalDistrictChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.districts,
+                        datasets: [{
+                            label: 'Hospital Violations',
+                            data: data.counts,
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.parsed.y} hospitals in ${context.label}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Hospitals' },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { display: true, text: 'Districts' },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            updatePaginationUI: function(pagination) {
+                $('#hospitalStart').text(((pagination.current_page - 1) * this.pageSize + 1).toLocaleString());
+                $('#hospitalEnd').text(Math.min(pagination.current_page * this.pageSize, pagination.total_records).toLocaleString());
+                $('#hospitalTotal').text(pagination.total_records.toLocaleString());
+
+                const controls = $('#hospitalPagination');
+                controls.empty();
+
+                // Previous Button
+                controls.append(`
+                    <button class="hospital-page-btn ${pagination.has_previous ? '' : 'disabled'}" 
+                            data-page="${pagination.current_page - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+
+                // Page Numbers
+                const maxPages = 5;
+                let startPage = Math.max(1, pagination.current_page - Math.floor(maxPages/2));
+                let endPage = Math.min(pagination.total_pages, startPage + maxPages - 1);
+
+                if (endPage - startPage < maxPages - 1) {
+                    startPage = Math.max(1, endPage - maxPages + 1);
+                }
+
+                if (startPage > 1) {
+                    controls.append(`<button class="hospital-page-btn" data-page="1">1</button>`);
+                    if (startPage > 2) controls.append('<span class="page-dots">...</span>');
+                }
+
+                for (let i = startPage; i <= endPage; i++) {
+                    controls.append(`
+                        <button class="hospital-page-btn ${i === pagination.current_page ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+
+                if (endPage < pagination.total_pages) {
+                    if (endPage < pagination.total_pages - 1) controls.append('<span class="page-dots">...</span>');
+                    controls.append(`<button class="hospital-page-btn" data-page="${pagination.total_pages}">${pagination.total_pages}</button>`);
+                }
+
+                // Next Button
+                controls.append(`
+                    <button class="hospital-page-btn ${pagination.has_next ? '' : 'disabled'}" 
+                            data-page="${pagination.current_page + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            }
         },
         'family-id': {
-            title: "Family ID Cases",
-            content: `<div class="card-details">
-                        <h4>Family ID Anomalies</h4>
-                        <div class="anomaly-grid">
-                            <div class="anomaly-item">
-                                <span>Duplicate Claims:</span>
-                                <span>42 cases</span>
-                            </div>
+            title: "Family ID Cases Analysis",
+            content: `
+                <div class="data-table-container">
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="familyPageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
                         </div>
-                      </div>`
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Family ID</th>
+                                <th>Claim ID</th>
+                                <th>Patient</th>
+                                <th>District</th>
+                                <th>Hospital</th>
+                            </tr>
+                        </thead>
+                        <tbody id="familyCasesData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        <div class="pagination-info">
+                            Showing <span id="familyStartRecord">0</span> to 
+                            <span id="familyEndRecord">0</span> of 
+                            <span id="familyTotalRecords">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="familyPaginationControls"></div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h4>District-wise Family Violations</h4>
+                    <canvas id="familyViolationsChart"></canvas>
+                    <div class="chart-legend" id="familyViolationsLegend"></div>
+                </div>
+
+                <div class="dual-pie-container">
+                    <div class="pie-card">
+                        <h4>Age Distribution</h4>
+                        <canvas id="familyAgeChart"></canvas>
+                        <div class="chart-callouts" id="familyAgeCallouts"></div>
+                    </div>
+                    <div class="pie-card">
+                        <h4>Gender Distribution</h4>
+                        <canvas id="familyGenderChart"></canvas>
+                        <div class="chart-callouts" id="familyGenderCallouts"></div>
+                    </div>
+                </div>
+            `,
+            colorMap: {},
+            postRender: function(districts) {
+                this.initPagination(districts);
+                this.loadTableData(districts);
+                this.loadCharts(districts);
+            },
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.totalPages = 1;
+                this.districts = districts;
+
+                $('#familyPageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#familyPageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(districts);
+                });
+
+                $(document).off('click', '.family-page-btn').on('click', '.family-page-btn', (e) => {
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(districts);
+                    }
+                });
+            },
+            loadTableData: function(districts) {
+                const url = `/get-family-id-cases-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(response => {
+                        const tbody = document.getElementById('familyCasesData');
+                        tbody.innerHTML = response.data.map(item => {
+                            const color = this.getFamilyColor(item.family_id);
+                            return `
+                                <tr style="background-color: ${color}">
+                                    <td>${item.serial_no}</td>
+                                    <td>${item.family_id}</td>
+                                    <td>${item.claim_id}</td>
+                                    <td>${item.patient_name}</td>
+                                    <td>${item.district_name}</td>
+                                    <td>${item.hospital_name}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                        this.updatePaginationUI(response.pagination);
+                    })
+                    .catch(error => console.error('Table load error:', error));
+            },
+            getFamilyColor: function(familyId) {
+                if (!this.colorMap[familyId]) {
+                    this.colorMap[familyId] = `hsl(${Math.floor(Math.random() * 360)}, 70%, 90%)`;
+                }
+                return this.colorMap[familyId];
+            },
+            loadCharts: function(districts) {
+                // Bar Chart
+                fetch(`/get-family-violations-by-district/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderBarChart('familyViolationsChart', data));
+                
+                // Pie Charts
+                fetch(`/get-family-age-distribution/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart('familyAgeChart', data, 'familyAgeCallouts'));
+                
+                fetch(`/get-family-gender-distribution/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart('familyGenderChart', data, 'familyGenderCallouts'));
+            },
+            renderBarChart: function(canvasId, data) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window[canvasId]) window[canvasId].destroy();
+                
+                window[canvasId] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.districts,
+                        datasets: [{
+                            label: 'Family Violations',
+                            data: data.counts,
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.parsed.y} family violations`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Families' },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { display: true, text: 'Districts' },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            renderPieChart: function(canvasId, data, calloutId) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window[canvasId]) window[canvasId].destroy();
+                
+                window[canvasId] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors,
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => {
+                                        const total = context.dataset.data.reduce((a, b) => a + b);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                this.generateCallouts(data, calloutId);
+            },
+            generateCallouts: function(data, containerId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                const total = data.data.reduce((a, b) => a + b, 0);
+                container.innerHTML = data.labels.map((label, i) => `
+                    <div class="callout-item">
+                        <span class="callout-color" style="background:${data.colors[i]}"></span>
+                        <strong>${label}:</strong> 
+                        ${data.data[i]} (${Math.round((data.data[i]/total)*100)}%)
+                    </div>
+                `).join('');
+            },
+            updatePaginationUI: function(paginationData) {
+                this.totalPages = paginationData.total_pages;
+                
+                const start = ((this.currentPage - 1) * this.pageSize) + 1;
+                const end = Math.min(start + this.pageSize - 1, paginationData.total_records);
+                
+                $('#familyStartRecord').text(start.toLocaleString());
+                $('#familyEndRecord').text(end.toLocaleString());
+                $('#familyTotalRecords').text(paginationData.total_records.toLocaleString());
+                
+                const paginationControls = $('#familyPaginationControls');
+                paginationControls.empty();
+                
+                // Previous button
+                paginationControls.append(`
+                    <button class="family-page-btn ${paginationData.has_previous ? '' : 'disabled'}" 
+                            data-page="${this.currentPage - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+                
+                // Page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+                
+                if (startPage > 1) {
+                    paginationControls.append(`
+                        <button class="family-page-btn" data-page="1">1</button>
+                        ${startPage > 2 ? '<span class="page-dots">...</span>' : ''}
+                    `);
+                }
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    paginationControls.append(`
+                        <button class="family-page-btn ${i === this.currentPage ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+                
+                if (endPage < this.totalPages) {
+                    paginationControls.append(`
+                        ${endPage < this.totalPages - 1 ? '<span class="page-dots">...</span>' : ''}
+                        <button class="family-page-btn" data-page="${this.totalPages}">
+                            ${this.totalPages}
+                        </button>
+                    `);
+                }
+                
+                // Next button
+                paginationControls.append(`
+                    <button class="family-page-btn ${paginationData.has_next ? '' : 'disabled'}" 
+                            data-page="${this.currentPage + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            }
         },
         'geo-anomalies': {
-            title: "Geographic Anomalies",
-            content: `<div class="card-details">
-                        <h4>Suspicious Geographic Patterns</h4>
-                        <div class="map-container">
-                            <p>Heatmap visualization</p>
+            title: "Geographic Anomalies Analysis",
+            content: `
+                <div class="data-table-container">
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="geoPageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
                         </div>
-                      </div>`
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Claim ID</th>
+                                <th>Patient</th>
+                                <th>Hospital</th>
+                                <th>District</th>
+                                <th>Patient State</th>
+                                <th>Hospital State</th>
+                            </tr>
+                        </thead>
+                        <tbody id="geoCasesData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        <div class="pagination-info">
+                            Showing <span id="geoStartRecord">0</span> to 
+                            <span id="geoEndRecord">0</span> of 
+                            <span id="geoTotalRecords">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="geoPaginationControls"></div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h4>State-wise Anomalies</h4>
+                    <canvas id="geoViolationsChart"></canvas>
+                    <div class="chart-legend" id="geoViolationsLegend"></div>
+                </div>
+
+                <div class="dual-pie-container">
+                    <div class="pie-card">
+                        <h4>Age Distribution</h4>
+                        <canvas id="geoAgeChart"></canvas>
+                        <div class="chart-callouts" id="geoAgeCallouts"></div>
+                    </div>
+                    <div class="pie-card">
+                        <h4>Gender Distribution</h4>
+                        <canvas id="geoGenderChart"></canvas>
+                        <div class="chart-callouts" id="geoGenderCallouts"></div>
+                    </div>
+                </div>
+            `,
+            postRender: function(districts) {
+                this.initPagination(districts);
+                this.loadTableData(districts);
+                this.loadCharts(districts);
+            },
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.totalPages = 1;
+                this.districts = districts;
+
+                $('#geoPageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#geoPageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(districts);
+                });
+
+                $(document).off('click', '.geo-page-btn').on('click', '.geo-page-btn', (e) => {
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(districts);
+                    }
+                });
+            },
+            loadTableData: function(districts) {
+                const url = `/get-geo-anomalies-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(response => {
+                        const tbody = document.getElementById('geoCasesData');
+                        tbody.innerHTML = response.data.map(item => `
+                            <tr>
+                                <td>${item.serial_no}</td>
+                                <td>${item.claim_id}</td>
+                                <td>${item.patient_name}</td>
+                                <td>${item.hospital_name}</td>
+                                <td>${item.district_name}</td>
+                                <td>${item.patient_state}</td>
+                                <td>${item.hospital_state}</td>
+                            </tr>
+                        `).join('');
+                        this.updatePaginationUI(response.pagination);
+                    })
+                    .catch(error => console.error('Table load error:', error));
+            },
+            loadCharts: function(districts) {
+                // Bar Chart
+                fetch(`/get-geo-violations-by-state/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderBarChart('geoViolationsChart', data));
+                
+                // Pie Charts
+                fetch(`/get-geo-demographics/age/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart('geoAgeChart', data, 'geoAgeCallouts'));
+                
+                fetch(`/get-geo-demographics/gender/?district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart('geoGenderChart', data, 'geoGenderCallouts'));
+            },
+            renderBarChart: function(canvasId, data) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window[canvasId]) window[canvasId].destroy();
+                
+                window[canvasId] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.states,
+                        datasets: [{
+                            label: 'State Anomalies',
+                            data: data.counts,
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.parsed.y} state mismatches`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Number of Cases' },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { display: true, text: 'Patient States' },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            renderPieChart: function(canvasId, data, calloutId) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window[canvasId]) window[canvasId].destroy();
+                
+                window[canvasId] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors,
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => {
+                                        const total = context.dataset.data.reduce((a, b) => a + b);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                this.generateCallouts(data, calloutId);
+            },
+            generateCallouts: function(data, containerId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                const total = data.data.reduce((a, b) => a + b, 0);
+                container.innerHTML = data.labels.map((label, i) => `
+                    <div class="callout-item">
+                        <span class="callout-color" style="background:${data.colors[i]}"></span>
+                        <strong>${label}:</strong> 
+                        ${data.data[i]} (${total > 0 ? Math.round((data.data[i]/total)*100) : 0}%)
+                    </div>
+                `).join('');
+            },
+            updatePaginationUI: function(paginationData) {
+                this.totalPages = paginationData.total_pages;
+                
+                const start = ((this.currentPage - 1) * this.pageSize) + 1;
+                const end = Math.min(start + this.pageSize - 1, paginationData.total_records);
+                
+                $('#geoStartRecord').text(start.toLocaleString());
+                $('#geoEndRecord').text(end.toLocaleString());
+                $('#geoTotalRecords').text(paginationData.total_records.toLocaleString());
+                
+                const paginationControls = $('#geoPaginationControls');
+                paginationControls.empty();
+                
+                // Previous button
+                paginationControls.append(`
+                    <button class="geo-page-btn ${paginationData.has_previous ? '' : 'disabled'}" 
+                            data-page="${this.currentPage - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+                
+                // Page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+                
+                if (startPage > 1) {
+                    paginationControls.append(`
+                        <button class="geo-page-btn" data-page="1">1</button>
+                        ${startPage > 2 ? '<span class="page-dots">...</span>' : ''}
+                    `);
+                }
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    paginationControls.append(`
+                        <button class="geo-page-btn ${i === this.currentPage ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+                
+                if (endPage < this.totalPages) {
+                    paginationControls.append(`
+                        ${endPage < this.totalPages - 1 ? '<span class="page-dots">...</span>' : ''}
+                        <button class="geo-page-btn" data-page="${this.totalPages}">
+                            ${this.totalPages}
+                        </button>
+                    `);
+                }
+                
+                // Next button
+                paginationControls.append(`
+                    <button class="geo-page-btn ${paginationData.has_next ? '' : 'disabled'}" 
+                            data-page="${this.currentPage + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            }
         },
         'ophthalmology': {
-            title: "Ophthalmology Overview",
-            content: `<div class="card-details">
-                        <h4>Cataract Surgery Metrics</h4>
-                        <div class="sub-card-nav">
-                            <button class="sub-card-link" data-card="age">Age Analysis</button>
-                            <button class="sub-card-link" data-card="ot-cases">OT Cases</button>
+            title: "Ophthalmology Analysis",
+            content: `
+                <div class="violation-type-selector">
+                    <button class="violation-type-btn active" data-type="all">All</button>
+                    <button class="violation-type-btn" data-type="age">Age <40</button>
+                    <button class="violation-type-btn" data-type="ot">OT Cases</button>
+                    <button class="violation-type-btn" data-type="preauth">Pre-auth Time</button>
+                </div>
+                
+                <div class="data-table-container">
+                    <div class="table-controls">
+                        <button class="table-download-btn">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                        <div class="page-size-selector">
+                            <span>Items per page:</span>
+                            <select id="ophthPageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
                         </div>
-                      </div>`
-        },
-        'age': {
-            title: "Age Analysis",
-            content: `<div class="card-details">
-                        <h4>Patient Age Distribution</h4>
-                        <div class="age-metrics">
-                            <div class="metric">
-                                <span>Under 40:</span>
-                                <span>64 cases</span>
+                    </div>
+                    <table class="data-table" id="ophthTable">
+                        <thead id="ophthTableHeader"></thead>
+                        <tbody id="ophthCasesData"></tbody>
+                    </table>
+                    <div class="table-footer">
+                        <div class="pagination-info">
+                            Showing <span id="ophthStartRecord">0</span> to 
+                            <span id="ophthEndRecord">0</span> of 
+                            <span id="ophthTotalRecords">0</span> records
+                        </div>
+                        <div class="pagination-controls" id="ophthPaginationControls"></div>
+                    </div>
+                </div>
+
+                <div class="charts-container" id="ophthCharts"></div>
+            `,
+            currentViolationType: 'all',
+            colorMap: {
+                age: '#FFEB3B',
+                ot: '#E91E63',
+                preauth: '#009688',
+                all: '#9C27B0'
+            },
+            postRender: function(districts) {
+                this.initPagination(districts);
+                this.initViolationTypeButtons(districts);
+                this.loadTableData('all', districts);
+                this.loadCharts('all', districts);
+            },
+            initPagination: function(districts) {
+                this.currentPage = 1;
+                this.pageSize = 50;
+                this.totalPages = 1;
+                this.districts = districts;
+
+                $('#ophthPageSizeSelect').off('change').on('change', () => {
+                    this.pageSize = parseInt($('#ophthPageSizeSelect').val());
+                    this.currentPage = 1;
+                    this.loadTableData(this.currentViolationType, districts);
+                });
+
+                $(document).off('click', '.ophth-page-btn').on('click', '.ophth-page-btn', (e) => {
+                    const page = parseInt($(e.currentTarget).data('page'));
+                    if (page >= 1 && page <= this.totalPages) {
+                        this.currentPage = page;
+                        this.loadTableData(this.currentViolationType, districts);
+                    }
+                });
+            },
+            updatePaginationUI: function(paginationData) {
+                this.totalPages = paginationData.total_pages;
+                const start = ((this.currentPage - 1) * this.pageSize) + 1;
+                const end = Math.min(start + this.pageSize - 1, paginationData.total_records);
+                
+                $('#ophthStartRecord').text(start.toLocaleString());
+                $('#ophthEndRecord').text(end.toLocaleString());
+                $('#ophthTotalRecords').text(paginationData.total_records.toLocaleString());
+                
+                const controls = $('#ophthPaginationControls').empty();
+                
+                // Previous button
+                controls.append(`
+                    <button class="ophth-page-btn ${paginationData.has_previous ? '' : 'disabled'}" 
+                            data-page="${this.currentPage - 1}">
+                        &laquo; Previous
+                    </button>
+                `);
+
+                // Page numbers
+                const maxVisiblePages = 5;
+                let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+                let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+                
+                if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                }
+                
+                if (startPage > 1) {
+                    controls.append(`
+                        <button class="ophth-page-btn" data-page="1">1</button>
+                        ${startPage > 2 ? '<span class="page-dots">...</span>' : ''}
+                    `);
+                }
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    controls.append(`
+                        <button class="ophth-page-btn ${i === this.currentPage ? 'active' : ''}" 
+                                data-page="${i}">
+                            ${i}
+                        </button>
+                    `);
+                }
+                
+                if (endPage < this.totalPages) {
+                    controls.append(`
+                        ${endPage < this.totalPages - 1 ? '<span class="page-dots">...</span>' : ''}
+                        <button class="ophth-page-btn" data-page="${this.totalPages}">
+                            ${this.totalPages}
+                        </button>
+                    `);
+                }
+                
+                // Next button
+                controls.append(`
+                    <button class="ophth-page-btn ${paginationData.has_next ? '' : 'disabled'}" 
+                            data-page="${this.currentPage + 1}">
+                        Next &raquo;
+                    </button>
+                `);
+            },
+            initViolationTypeButtons: function(districts) {
+                $('.violation-type-btn').off('click').on('click', (e) => {
+                    const btn = $(e.currentTarget);
+                    const violationType = btn.data('type');
+                    
+                    $('.violation-type-btn').removeClass('active');
+                    btn.addClass('active');
+                    
+                    this.currentViolationType = violationType;
+                    this.currentPage = 1;
+                    this.loadTableData(violationType, districts);
+                    this.loadCharts(violationType, districts);
+                });
+            },
+            loadTableData: function(violationType, districts) {
+                const url = `/get-ophthalmology-details/?type=${violationType}&district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(response => {
+                        this.updateTableHeader(violationType);
+                        this.updateTableBody(response.data, violationType);
+                        this.updatePaginationUI(response.pagination);
+                    })
+                    .catch(error => console.error('Error loading table data:', error));
+            },
+            updateTableHeader: function(violationType) {
+                const headers = {
+                    all: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Age<40', 'OT Cases', 'Pre-auth Time'],
+                    age: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Age<40'],
+                    ot: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'OT Cases'],
+                    preauth: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Pre-auth Time']
+                };
+
+                const headerHTML = headers[violationType].map(h => `<th>${h}</th>`).join('');
+                $('#ophthTableHeader').html(`<tr>${headerHTML}</tr>`);
+            },
+            updateTableBody: function(data, violationType) {
+                const rows = data.map(item => {
+                    const baseCols = `
+                        <td>${item.serial_no}</td>
+                        <td>${item.claim_id}</td>
+                        <td>${item.patient_name}</td>
+                        <td>${item.hospital_name}</td>
+                        <td>${item.district_name}</td>
+                        <td>₹${item.amount?.toLocaleString('en-IN') || '0'}</td>
+                    `;
+
+                    let violationCols = '';
+                    if (violationType === 'all') {
+                        violationCols = `
+                            <td class="${item.age_violation ? 'age-violation' : ''}">${item.age_violation ? 'Yes' : ''}</td>
+                            <td class="${item.ot_violation ? 'ot-violation' : ''}">${item.ot_violation ? 'Yes' : ''}</td>
+                            <td class="${item.preauth_violation ? 'preauth-violation' : ''}">${item.preauth_violation ? 'Yes' : ''}</td>
+                        `;
+                    } else {
+                        const violationClass = `${violationType}-violation`;
+                        violationCols = `<td class="${violationClass}">Yes</td>`;
+                    }
+
+                    return `<tr>${baseCols}${violationCols}</tr>`;
+                });
+                
+                $('#ophthCasesData').html(rows.join(''));
+            },
+            loadCharts: function(violationType, districts) {
+                const container = $('#ophthCharts');
+                container.empty();
+                
+                if (violationType === 'all') {
+                    container.html(`
+                        <div class="chart-group">
+                            <!-- Combined Bar Chart -->
+                            <div class="ophthalmology-combined-bar-header">
+                                <h2>COMBINED</h2>
+                                <div class="chart-container">
+                                    <h4>Combined Distribution</h4>
+                                    <canvas id="ophthCombinedChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Individual Bar Charts -->
+                            <div class="ophthalmology-age-bar-header">
+                                <h2>Age Less Than 40</h2>
+                                <div class="chart-container">
+                                    <h4>Age &lt;40 Distribution</h4>
+                                    <canvas id="ophthAgeChart"></canvas>
+                                </div>
+                            </div>
+
+                            <div class="ophthalmology-ot-bar-header">
+                                <h2>OT Cases</h2>
+                                <div class="chart-container">
+                                    <h4>OT Cases Distribution</h4>
+                                    <canvas id="ophthOtChart"></canvas>
+                                </div>
+                            </div>
+
+                            <div class="ophthalmology-preauth-bar-header">
+                                <h2>Pre-auth Time Cases</h2>
+                                <div class="chart-container">
+                                    <h4>Pre-auth Time Distribution</h4>
+                                    <canvas id="ophthPreauthChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Pie Charts Container -->
+                            <div class="dual-pie-container">
+                                <!-- Combined Pies -->
+                                <div class="pie-card">
+                                    <h4>Combined Age</h4>
+                                    <canvas id="ophthAllAgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophthAllAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Combined Gender</h4>
+                                    <canvas id="ophthAllGenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophthAllGenderCallouts"></div>
+                                </div>
+
+                                <!-- Age <40 Pies -->
+                                <div class="pie-card">
+                                    <h4>Age &lt;40 Age</h4>
+                                    <canvas id="ophthAgeAgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophthAgeAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Age &lt;40 Gender</h4>
+                                    <canvas id="ophthAgeGenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophthAgeGenderCallouts"></div>
+                                </div>
+
+                                <!-- OT Cases Pies -->
+                                <div class="pie-card">
+                                    <h4>OT Cases Age</h4>
+                                    <canvas id="ophthOtAgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophthOtAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>OT Cases Gender</h4>
+                                    <canvas id="ophthOtGenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophthOtGenderCallouts"></div>
+                                </div>
+
+                                <!-- Pre-auth Pies -->
+                                <div class="pie-card">
+                                    <h4>Pre-auth Age</h4>
+                                    <canvas id="ophthPreauthAgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophthPreauthAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Pre-auth Gender</h4>
+                                    <canvas id="ophthPreauthGenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophthPreauthGenderCallouts"></div>
+                                </div>
                             </div>
                         </div>
-                      </div>`
-        },
-        'ot-cases': {
-            title: "OT Cases",
-            content: `<div class="card-details">
-                        <h4>Operation Theater Cases</h4>
-                        <div class="ot-metrics">
-                            <div class="metric">
-                                <span>This Month:</span>
-                                <span>183 cases</span>
+                    `);
+                    
+                    ['all', 'age', 'ot', 'preauth'].forEach(type => {
+                        const canvasId = type === 'all' 
+                        ? 'ophthCombinedChart' 
+                        : `ophth${this.capitalize(type)}Chart`;
+                    this.loadBarChart(type, districts, canvasId, `ophth${this.capitalize(type)}Legend`);
+                    });
+
+                    this.loadPieCharts('all', districts); // Combined pies
+                    ['age', 'ot', 'preauth'].forEach(type => {
+                        this.loadPieCharts(type, districts); // Individual violation pies
+                    });
+                } else {
+                    container.html(`
+                        <div class="chart-group">
+                            <div class="chart-container">
+                                <h4>${this.capitalize(violationType)} Distribution</h4>
+                                <canvas id="ophth${this.capitalize(violationType)}Chart"></canvas>
+                                <div class="chart-legend" id="ophth${this.capitalize(violationType)}Legend"></div>
+                            </div>
+                            <div class="dual-pie-container">
+                                <div class="pie-card">
+                                    <h4>Age Distribution</h4>
+                                    <canvas id="ophth${this.capitalize(violationType)}AgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophth${this.capitalize(violationType)}AgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>Gender Distribution</h4>
+                                    <canvas id="ophth${this.capitalize(violationType)}GenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophth${this.capitalize(violationType)}GenderCallouts"></div>
+                                </div>
                             </div>
                         </div>
-                      </div>`
-        }
+                    `);
+                    
+                    this.loadBarChart(violationType, districts, `ophth${this.capitalize(violationType)}Chart`, `ophth${this.capitalize(violationType)}Legend`);
+                    this.loadPieCharts(violationType, districts);
+                }
+            },
+            loadBarChart: function(violationType, districts, canvasId, legendId) {
+                fetch(`/get-ophthalmology-distribution/?type=${violationType}&district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderBarChart(canvasId, legendId, data, violationType))
+                    .catch(error => console.error('Error loading bar chart:', error));
+            },
+            loadPieCharts: function(violationType, districts) {
+                fetch(`/get-ophthalmology-demographics/age/?violation_type=${violationType}&district=${districts.join(',')}`)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Network error');
+                        return response.json();
+                    })
+                    .then(data => this.renderPieChart(
+                        `ophth${this.capitalize(violationType)}AgeChart`, 
+                        `ophth${this.capitalize(violationType)}AgeCallouts`, 
+                        data
+                    ))
+                    .catch(error => {
+                        console.error('Age demo error:', error);
+                        document.getElementById(`ophth${this.capitalize(violationType)}AgeChart`).innerHTML = 
+                            '<div class="chart-error">Failed to load age data</div>';
+                    });
+                    
+                fetch(`/get-ophthalmology-demographics/gender/?violation_type=${violationType}&district=${districts.join(',')}`)
+                    .then(response => response.json())
+                    .then(data => this.renderPieChart(
+                        `ophth${this.capitalize(violationType)}GenderChart`, 
+                        `ophth${this.capitalize(violationType)}GenderCallouts`, 
+                        data
+                    ))
+                    .catch(error => {
+                        console.error('Gender demo error:', error);
+                        document.getElementById(`ophth${this.capitalize(violationType)}GenderChart`).innerHTML = 
+                            '<div class="chart-error">Failed to load age data</div>';
+                    });
+            },
+            renderBarChart: function(canvasId, legendId, data, violationType) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window.ophthCharts?.[canvasId]) {
+                    window.ophthCharts[canvasId].destroy();
+                }
+                
+                window.ophthCharts = window.ophthCharts || {};
+                window.ophthCharts[canvasId] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.districts,
+                        datasets: [{
+                            label: `${this.formatLabel(violationType)} Cases`,
+                            data: data.counts,
+                            backgroundColor: this.colorMap[violationType],
+                            borderColor: this.adjustColor(this.colorMap[violationType], -20),
+                            borderWidth: 1,
+                            hoverBackgroundColor: this.adjustColor(this.colorMap[violationType], 20)
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => `${context.dataset.label}: ${context.parsed.y}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { 
+                                    display: true, 
+                                    text: 'Number of Cases',
+                                    font: { weight: 'bold' }
+                                },
+                                ticks: { precision: 0 }
+                            },
+                            x: {
+                                title: { 
+                                    display: true, 
+                                    text: 'Districts',
+                                    font: { weight: 'bold' }
+                                },
+                                ticks: { 
+                                    autoSkip: false,
+                                    maxRotation: 45,
+                                    minRotation: 45 
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 1000,
+                            easing: 'easeOutQuart'
+                        }
+                    }
+                });
+
+                // Generate legend
+                if (legendId) {
+                    const legend = document.getElementById(legendId);
+                    if (legend) {
+                        legend.innerHTML = `
+                            <div class="legend-item">
+                                <span class="legend-color" style="background:${this.colorMap[violationType]}"></span>
+                                <span>${this.formatLabel(violationType)} Cases</span>
+                            </div>
+                        `;
+                    }
+                }
+            },
+            renderPieChart: function(canvasId, calloutId, data) {
+                const ctx = document.getElementById(canvasId)?.getContext('2d');
+                if (!ctx) return;
+
+                if (window.ophthCharts?.[canvasId]) {
+                    window.ophthCharts[canvasId].destroy();
+                }
+                
+                window.ophthCharts = window.ophthCharts || {};
+                window.ophthCharts[canvasId] = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors,
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: context => {
+                                        const total = context.dataset.data.reduce((a, b) => a + b);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        },
+                        animation: {
+                            animateScale: true,
+                            animateRotate: true
+                        }
+                    }
+                });
+                
+                this.generateCallouts(data, calloutId);
+            },
+            generateCallouts: function(data, containerId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                const total = data.data.reduce((a, b) => a + b, 0);
+                container.innerHTML = data.labels.map((label, i) => `
+                    <div class="callout-item">
+                        <span class="callout-color" style="background:${data.colors[i]}"></span>
+                        <strong>${label}:</strong> 
+                        ${data.data[i]} (${total > 0 ? Math.round((data.data[i]/total)*100) : 0}%)
+                    </div>
+                `).join('');
+            },
+            capitalize: function(str) {
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            },
+            formatLabel: function(type) {
+                const labels = {
+                    'age': 'Age <40',
+                    'ot': 'OT',
+                    'preauth': 'Pre-auth Time',
+                    'all': 'All'
+                };
+                return labels[type] || type;
+            },
+            adjustColor: function(color, amount) {
+                return '#' + color.replace(/^#/, '').replace(/../g, color => 
+                    ('0' + Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2)
+                );
+            }
+        },
+        // 'age': {
+        //     title: "Age Analysis",
+        //     content: `<div class="card-details">
+        //                 <h4>Patient Age Distribution</h4>
+        //                 <div class="age-metrics">
+        //                     <div class="metric">
+        //                         <span>Under 40:</span>
+        //                         <span>64 cases</span>
+        //                     </div>
+        //                 </div>
+        //               </div>`
+        // },
+        // 'ot-cases': {
+        //     title: "OT Cases",
+        //     content: `<div class="card-details">
+        //                 <h4>Operation Theater Cases</h4>
+        //                 <div class="ot-metrics">
+        //                     <div class="metric">
+        //                         <span>This Month:</span>
+        //                         <span>183 cases</span>
+        //                     </div>
+        //                 </div>
+        //               </div>`
+        // }
     };
 
     function getCookie(name) {
