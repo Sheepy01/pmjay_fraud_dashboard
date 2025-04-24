@@ -10,6 +10,7 @@ urlpatterns = [
     path('get-flagged-claims/', views.get_flagged_claims, name='get_flagged_claims'),
     path('get-flagged-claims-details/', views.get_flagged_claims_details, name='get_flagged_claims_details'),
     path('get-flagged-claims-by-district/', views.get_flagged_claims_by_district, name='get_flagged_claims_by_district'),
+    path('get-all-flagged-claims/', views.get_all_flagged_claims, name="get_all_flagged_claims"),
     path('get-age-distribution/', views.get_age_distribution, name='get_age_distribution'),
     path('get-gender-distribution/', views.get_gender_distribution, name='get_gender_distribution'),
     path('get-high-value-claims/', views.get_high_value_claims, name='get_high_value_claims'),
@@ -34,5 +35,10 @@ urlpatterns = [
     path('get-ophthalmology-distribution/', views.get_ophthalmology_distribution, name='ophth_distribution'),
     path('get-ophthalmology-demographics/<str:type>/', views.get_ophthalmology_demographics, name='ophth_demographics'),
     path('flagged-claims/download/', views.download_flagged_claims, name='download_flagged_claims'),
+    path(
+      'download_flagged_claims_report/',
+      views.download_flagged_claims_report,
+      name='download_flagged_claims_report'
+    ),
     path('download-high-value-claims-excel/', views.download_high_value_claims_excel, name='download_high_value_claims_excel'),
 ]

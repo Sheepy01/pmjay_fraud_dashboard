@@ -16,6 +16,79 @@ from datetime import timedelta
 import pandas as pd
 import re
 import io
+from django.template.loader import render_to_string
+from weasyprint import HTML, CSS
+from weasyprint.text.fonts import FontConfiguration
+import plotly.express as px
+import json
+from io import BytesIO
+import base64
+import time
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_protect
+import datetime
+
+@require_POST
+@csrf_protect
+def download_flagged_claims_report(request):
+    # 1) Read parameters & chart images
+    district = request.POST.get('district', '')
+    districts = district.split(',') if district else []
+
+    # Each value is "data:image/png;base64,XXXXX"
+    def strip_prefix(data_url):
+        return data_url.split('base64,', 1)[1]
+
+    flagged_b64 = strip_prefix(request.POST['flagged_chart'])
+    age_b64     = strip_prefix(request.POST['age_chart'])
+    gender_b64  = strip_prefix(request.POST['gender_chart'])
+    age_callouts    = request.POST.get('age_callouts', '')
+    gender_callouts = request.POST.get('gender_callouts', '')
+
+    # 2) Fetch the FULL flagged-claims data (no pagination)
+    suspicious_ids = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    qs = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_ids) &
+        Q(hospital_type='P')
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    table_rows = []
+    for idx, case in enumerate(qs, start=1):
+        table_rows.append({
+            'serial_no':     idx,
+            'claim_id':      case.registration_id or case.case_id or 'N/A',
+            'patient_name':  case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
+            'district_name': case.district_name or 'N/A',
+            'amount':        case.claim_initiated_amount or 0,
+            'reason':        'Suspicious hospital'
+        })
+
+    # 3) Render HTML via a dedicated template
+    context = {
+        'logo_url':    request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'table_rows':  table_rows,
+        'flagged_b64': flagged_b64,
+        'age_b64':     age_b64,
+        'gender_b64':  gender_b64,
+        'age_callouts':    age_callouts,
+        'gender_callouts': gender_callouts,
+    }
+    html_string = render_to_string('flagged_claims_report.html', context)
+
+    # 4) Generate PDF
+    html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+    pdf  = html.write_pdf()
+
+    # 5) Return as attachment
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
+    return response
+
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -146,6 +219,36 @@ def get_flagged_claims_by_district(request):
     }
     
     return JsonResponse(data)
+
+def get_all_flagged_claims(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # Get suspicious hospitals
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    
+    # Base query
+    flagged_cases = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P')
+    )
+    
+    if districts:
+        flagged_cases = flagged_cases.filter(district_name__in=districts)
+    
+    data = []
+    for idx, case in enumerate(flagged_cases, 1):
+        data.append({
+            'serial_no': idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
+            'district_name': case.district_name or 'N/A',
+            'amount': case.claim_initiated_amount or 0,
+            'reason': 'Suspicious hospital'
+        })
+    
+    return JsonResponse({'data': data})
 
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')

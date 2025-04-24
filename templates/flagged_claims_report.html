@@ -1,0 +1,136 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+          /* First page: 5cm top margin, includes date in header */
+          @page :first {
+            size: A4 portrait;
+          - margin: 5cm 1cm 1cm 1cm;    
+            @top-center    { content: element(firstHeader) }
+            @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+          }
+
+          /* All subsequent pages: 3cm top margin, no date in header */
+        @page {
+            size: A4 portrait;
+            margin: 3cm 1cm 1cm 1cm;
+            @top-center    { content: element(normalHeader) }
+            @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+        }
+      
+          /* Running elements */
+          #firstHeader { position: running(firstHeader) }
+          #normalHeader { position: running(normalHeader) }
+      
+          /* Ensure table header repeats */
+          thead { display: table-header-group; }
+      
+          /* Table beautification */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1em;
+            font-size: 11px;
+          }
+          thead {
+            background-color:rgb(82, 90, 130);
+          }
+          th {
+            border: 1px solid #ccc;
+            padding: 6px;
+            text-align: left;
+            color: white
+          } 
+          td {
+            border: 1px solid #ccc;
+            padding: 6px;
+            text-align: left;
+          }
+          tbody tr:nth-child(even) {
+            background: #fafafa;
+          }
+      
+          /* Chart sections start on new page */
+          .chart-section {
+            page-break-before: always;
+            margin-top: 1em;
+          }
+          .chart-section img {
+            display: block;
+            margin: 0 auto 0.5em;
+            max-width: 100%;
+            height: auto;
+          }
+          .callouts {
+            padding: 20px; 
+            font-size: 20px;
+            margin: 0 auto 1em;
+            width: 80%;
+          }
+        </style>
+      </head>
+      <body>
+      
+        <!-- First-page header with date -->
+        <header id="firstHeader">
+            <img
+            src="{{ logo_url }}"
+        -   height="50"
+        +   style="max-height:40px; width:auto; float:left; margin-right:10px;"
+            alt="Logo"
+          />
+          <h2 style="text-align:center; line-height:40px; margin:0;">
+            {{ title }}
+          </h2>
+          <div style="text-align:center; font-size:10px;">Generated on {{ date }}</div>
+          <hr/>
+        </header>
+      
+        <footer></footer>
+      
+        <main>
+          <!-- Table section -->
+          <section>
+            <h3>Patient Admitted in Watchlist Hospitals Report</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>Claim ID</th><th>Patient</th>
+                  <th>Hospital</th><th>District</th>
+                  <th>Amount (₹)</th><th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in table_rows %}
+                <tr>
+                  <td>{{ row.serial_no }}</td>
+                  <td>{{ row.claim_id }}</td>
+                  <td>{{ row.patient_name }}</td>
+                  <td>{{ row.hospital_name }}</td>
+                  <td>{{ row.district_name }}</td>
+                  <td>{{ row.amount }}</td>
+                  <td>{{ row.reason }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </section>
+      
+          <!-- Chart + callouts sections -->
+          <section class="chart-section">
+            <h3>District-wise Distribution</h3>
+            <img src="data:image/png;base64,{{ flagged_b64 }}" alt="">
+      
+            <h3>Age Group Distribution</h3>
+            <img src="data:image/png;base64,{{ age_b64 }}" alt="">
+            <div class="callouts">{{ age_callouts|safe }}</div>
+      
+            <h3>Gender Distribution</h3>
+            <img src="data:image/png;base64,{{ gender_b64 }}" alt="">
+            <div class="callouts">{{ gender_callouts|safe }}</div>
+          </section>
+        </main>
+      
+      </body>
+</html>

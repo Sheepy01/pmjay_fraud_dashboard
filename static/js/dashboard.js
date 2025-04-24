@@ -208,11 +208,11 @@ $(document).ready(function() {
           if (district) {
             url += '?district=' + encodeURIComponent(district);
           }
-          // this will now be something like
-          // "/flagged-claims/download/?district=Bihar,Patna"
           window.location.href = url;
         });
     });
+
+
 
     function updateHighValueClaims(districts = []) {
         // If null (All Districts unchecked), show empty state
@@ -390,7 +390,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -729,7 +729,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -1164,7 +1164,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -1369,7 +1369,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -1661,7 +1661,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -1952,7 +1952,7 @@ $(document).ready(function() {
                 <div class="data-table-container">
                     <div class="table-controls">
                         <button class="table-download-btn">
-                            <i class="fas fa-download"></i> Export CSV
+                            <i class="fas fa-download"></i> Export Excel
                         </button>
                         <div class="page-size-selector">
                             <span>Items per page:</span>
@@ -2656,6 +2656,98 @@ $(document).ready(function() {
         document.getElementById(containerId).innerHTML = calloutHTML;
     }
 
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          document.cookie.split(';').forEach(c => {
+            const [k, v] = c.trim().split('=');
+            if (k === name) cookieValue = decodeURIComponent(v);
+          });
+        }
+        return cookieValue;
+      }
+      
+    const loader      = document.getElementById('pdfLoader');
+    const progressBar = document.getElementById('pdfProgressBar');
+    const progressTxt = document.getElementById('pdfProgressText');
+    const downloadBtn = document.querySelector('.modal-pdf-download');
+    
+    downloadBtn.addEventListener('click', () => {
+    // Show overlay & disable button
+    loader.classList.add('show');
+    downloadBtn.disabled = true;
+    
+    // Reset bar
+    let progress = 0;
+    progressBar.style.width = '0%';
+    progressTxt.textContent = '0%';
+    
+    // Simulate progress up to 90%
+    const interval = setInterval(() => {
+        if (progress < 90) {
+            progress += 1;
+            progressBar.style.width = `${progress}%`;
+            progressTxt.textContent = `${progress}%`;
+        } else {
+            clearInterval(interval);
+        }
+    }, 50);  // adjust speed by changing this value
+    
+    // Gather data
+    const container   = document.querySelector('.modal-container');
+    const downloadUrl = container.dataset.downloadUrl;
+    const district    = container.dataset.district || '';
+    const flaggedPNG     = document.getElementById('flaggedClaimsChart').toDataURL();
+    const agePNG         = document.getElementById('agePieChart').toDataURL();
+    const genderPNG      = document.getElementById('genderPieChart').toDataURL();
+    const ageCallouts    = document.getElementById('ageCallouts').innerHTML;
+    const genderCallouts = document.getElementById('genderCallouts').innerHTML;
+    
+    const formData = new FormData();
+    formData.append('district',        district);
+    formData.append('flagged_chart',   flaggedPNG);
+    formData.append('age_chart',       agePNG);
+    formData.append('gender_chart',    genderPNG);
+    formData.append('age_callouts',    ageCallouts);
+    formData.append('gender_callouts', genderCallouts);
+    
+    // Fire request
+    fetch(downloadUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        body: formData,
+    })
+    .then(res => res.blob())
+    .then(blob => {
+        // Stop timer, jump to 100%
+        clearInterval(interval);
+        progressBar.style.width = '100%';
+        progressTxt.textContent = '100%';
+    
+        // Small pause so 100% is visible
+        setTimeout(() => {
+        loader.classList.remove('show');
+        downloadBtn.disabled = false;
+    
+        // Trigger download
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href    = url;
+        a.download = 'patient_admitted_in_watchlist_hospitals_report.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        }, 200);
+    })
+    .catch(err => {
+        console.error(err);
+        clearInterval(interval);
+        loader.classList.remove('show');
+        downloadBtn.disabled = false;
+    });
+    });
+      
     const ModalController = {
         init: function() {
             $('#modalOverlay').hide().removeClass('show');
@@ -2734,13 +2826,8 @@ $(document).ready(function() {
                     template.postRender(districts);
                 }
                 
-                // Set up download button handlers
-                $('.modal-pdf-download').click(function() {
-                    generatePDFReport(cardId, districts);
-                });
-                
                 $('.table-download-btn').click(function() {
-                    exportTableToCSV(cardId);
+                    exportTableToExcel(cardId);
                 });
 
                 this.adjustModalScroll();
