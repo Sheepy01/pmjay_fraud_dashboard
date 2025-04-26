@@ -34,11 +34,9 @@ urlpatterns = [
     path('get-ophthalmology-details/', views.get_ophthalmology_details, name='ophth_details'),
     path('get-ophthalmology-distribution/', views.get_ophthalmology_distribution, name='ophth_distribution'),
     path('get-ophthalmology-demographics/<str:type>/', views.get_ophthalmology_demographics, name='ophth_demographics'),
-    path('flagged-claims/download/', views.download_flagged_claims, name='download_flagged_claims'),
-    path(
-      'download_flagged_claims_report/',
-      views.download_flagged_claims_report,
-      name='download_flagged_claims_report'
-    ),
-    path('download-high-value-claims-excel/', views.download_high_value_claims_excel, name='download_high_value_claims_excel'),
+    path('flagged-claims/download/', views.download_flagged_claims_excel, name='download_flagged_claims'),
+    path('high-value-claims/download/', views.download_high_value_claims, name='download_high_value_claims'),
+    path('download-flagged-claims-report/', views.download_flagged_claims_report, name='download_flagged_claims_report'),
+    path('download-high-value-claims-report/', views.download_high_value_claims_report, name='download_high_value_claims_report'),
+
 ]

@@ -2,6 +2,16 @@ $(document).ready(function() {
     window.highValueCharts = {};
     let agePieChart, genderPieChart;
 
+    function safeCanvasDataURL(id) {
+        const el = document.getElementById(id);
+        return el ? el.toDataURL() : '';
+    }
+
+    function safeInnerHTML(id) {
+        const el = document.getElementById(id);
+        return el ? el.innerHTML : '';
+    }
+
     // ======================
     // Sidebar Toggle (jQuery)
     // ======================
@@ -212,8 +222,6 @@ $(document).ready(function() {
         });
     });
 
-
-
     function updateHighValueClaims(districts = []) {
         // If null (All Districts unchecked), show empty state
         if (districts === null) {
@@ -252,6 +260,19 @@ $(document).ready(function() {
             }
         });
     }
+
+    $(document).on('click', '.card.high-value .download-btn', function(e) {
+        e.preventDefault();
+        const $card     = $(this).closest('.card.high-value');
+        const baseUrl   = $card.data('download-url');
+        const district  = $card.data('district') || '';
+      
+        let url = baseUrl;
+        if (district) {
+          url += '?district=' + encodeURIComponent(district);
+        }
+        window.location.href = url;
+    });
 
     function updateHospitalBedCases(districts = []) {
         // $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
@@ -454,6 +475,9 @@ $(document).ready(function() {
                 </div>
             `,
             postRender: function(districts) {
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.cardId = 'flagged-claims';
+                modal.dataset.pdfUrl  = window.PDF_URLS.flagged;
                 this.initPagination(districts);
                 this.loadTableData(districts);
                 this.loadChartData(districts);
@@ -855,6 +879,11 @@ $(document).ready(function() {
             },
 
             postRender: function(districts) {
+                const selected = $('#districtSelect').val() || [];
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.district = selected.join(',');
+                modal.dataset.cardId = 'high-value';
+                modal.dataset.pdfUrl  = window.PDF_URLS.highValue;
                 this.initPagination(districts);
                 const initialType = 'all';
                 this.handleCaseTypeChange(initialType, districts);
@@ -1156,7 +1185,8 @@ $(document).ready(function() {
             },
             capitalize: function(str) {
                 return str.charAt(0).toUpperCase() + str.slice(1);
-            }
+            },
+            
         },
         'hospital-beds': {
             title: "Hospital Bed Violations Analysis",
@@ -2656,200 +2686,311 @@ $(document).ready(function() {
         document.getElementById(containerId).innerHTML = calloutHTML;
     }
 
+    // function getCookie(name) {
+    //     let cookieValue = null;
+    //     if (document.cookie && document.cookie !== '') {
+    //       document.cookie.split(';').forEach(c => {
+    //         const [k, v] = c.trim().split('=');
+    //         if (k === name) cookieValue = decodeURIComponent(v);
+    //       });
+    //     }
+    //     return cookieValue;
+    // }
+    
+    // // PDF Downloader
+    // const loader      = document.getElementById('pdfLoader');
+    // const progressBar = document.getElementById('pdfProgressBar');
+    // const progressTxt = document.getElementById('pdfProgressText');
+    // const downloadBtn = document.querySelector('.modal-pdf-download');
+    
+    // downloadBtn.addEventListener('click', () => {
+    // // Show overlay & disable button
+    // loader.classList.add('show');
+    // downloadBtn.disabled = true;
+    
+    // // Reset bar
+    // let progress = 0;
+    // progressBar.style.width = '0%';
+    // progressTxt.textContent = '0%';
+    
+    // // Simulate progress up to 90%
+    // const interval = setInterval(() => {
+    //     if (progress < 90) {
+    //         progress += 1;
+    //         progressBar.style.width = `${progress}%`;
+    //         progressTxt.textContent = `${progress}%`;
+    //     } else {
+    //         clearInterval(interval);
+    //     }
+    // }, 50);  // adjust speed by changing this value
+    
+    // // Gather data
+    // const container   = document.querySelector('.modal-container');
+    // const downloadUrl = container.dataset.pdfUrl;
+    // const district    = container.dataset.district || '';
+    // const flaggedPNG     = document.getElementById('flaggedClaimsChart').toDataURL();
+    // const agePNG         = document.getElementById('agePieChart').toDataURL();
+    // const genderPNG      = document.getElementById('genderPieChart').toDataURL();
+    // const ageCallouts    = document.getElementById('ageCallouts').innerHTML;
+    // const genderCallouts = document.getElementById('genderCallouts').innerHTML;
+    
+    // const formData = new FormData();
+    // formData.append('district',        district);
+    // formData.append('flagged_chart',   flaggedPNG);
+    // formData.append('age_chart',       agePNG);
+    // formData.append('gender_chart',    genderPNG);
+    // formData.append('age_callouts',    ageCallouts);
+    // formData.append('gender_callouts', genderCallouts);
+    
+    // // Fire request
+    // fetch(downloadUrl, {
+    //     method: 'POST',
+    //     headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    //     body: formData,
+    // })
+    // .then(res => res.blob())
+    // .then(blob => {
+    //     // Stop timer, jump to 100%
+    //     clearInterval(interval);
+    //     progressBar.style.width = '100%';
+    //     progressTxt.textContent = '100%';
+    
+    //     // Small pause so 100% is visible
+    //     setTimeout(() => {
+    //     loader.classList.remove('show');
+    //     downloadBtn.disabled = false;
+    
+    //     // Trigger download
+    //     const url = URL.createObjectURL(blob);
+    //     const a   = document.createElement('a');
+    //     a.href    = url;
+    //     a.download = 'flagged_claims_report.pdf';
+    //     document.body.appendChild(a);
+    //     a.click();
+    //     a.remove();
+    //     URL.revokeObjectURL(url);
+    //     }, 200);
+    // })
+    // .catch(err => {
+    //     console.error(err);
+    //     clearInterval(interval);
+    //     loader.classList.remove('show');
+    //     downloadBtn.disabled = false;
+    // });
+    // });
+
+    // make sure getCookie is defined to fetch CSRF token…
     function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-          document.cookie.split(';').forEach(c => {
-            const [k, v] = c.trim().split('=');
-            if (k === name) cookieValue = decodeURIComponent(v);
-          });
-        }
-        return cookieValue;
-      }
-      
-    const loader      = document.getElementById('pdfLoader');
-    const progressBar = document.getElementById('pdfProgressBar');
-    const progressTxt = document.getElementById('pdfProgressText');
-    const downloadBtn = document.querySelector('.modal-pdf-download');
-    
-    downloadBtn.addEventListener('click', () => {
-    // Show overlay & disable button
-    loader.classList.add('show');
-    downloadBtn.disabled = true;
-    
-    // Reset bar
-    let progress = 0;
-    progressBar.style.width = '0%';
-    progressTxt.textContent = '0%';
-    
-    // Simulate progress up to 90%
-    const interval = setInterval(() => {
-        if (progress < 90) {
-            progress += 1;
-            progressBar.style.width = `${progress}%`;
-            progressTxt.textContent = `${progress}%`;
-        } else {
-            clearInterval(interval);
-        }
-    }, 50);  // adjust speed by changing this value
-    
-    // Gather data
-    const container   = document.querySelector('.modal-container');
-    const downloadUrl = container.dataset.downloadUrl;
-    const district    = container.dataset.district || '';
-    const flaggedPNG     = document.getElementById('flaggedClaimsChart').toDataURL();
-    const agePNG         = document.getElementById('agePieChart').toDataURL();
-    const genderPNG      = document.getElementById('genderPieChart').toDataURL();
-    const ageCallouts    = document.getElementById('ageCallouts').innerHTML;
-    const genderCallouts = document.getElementById('genderCallouts').innerHTML;
-    
-    const formData = new FormData();
-    formData.append('district',        district);
-    formData.append('flagged_chart',   flaggedPNG);
-    formData.append('age_chart',       agePNG);
-    formData.append('gender_chart',    genderPNG);
-    formData.append('age_callouts',    ageCallouts);
-    formData.append('gender_callouts', genderCallouts);
-    
-    // Fire request
-    fetch(downloadUrl, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': getCookie('csrftoken') },
-        body: formData,
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        // Stop timer, jump to 100%
-        clearInterval(interval);
-        progressBar.style.width = '100%';
-        progressTxt.textContent = '100%';
-    
-        // Small pause so 100% is visible
-        setTimeout(() => {
-        loader.classList.remove('show');
-        downloadBtn.disabled = false;
-    
-        // Trigger download
-        const url = URL.createObjectURL(blob);
-        const a   = document.createElement('a');
-        a.href    = url;
-        a.download = 'patient_admitted_in_watchlist_hospitals_report.pdf';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        }, 200);
-    })
-    .catch(err => {
-        console.error(err);
-        clearInterval(interval);
-        loader.classList.remove('show');
-        downloadBtn.disabled = false;
-    });
-    });
-      
-    const ModalController = {
-        init: function() {
-            $('#modalOverlay').hide().removeClass('show');
-            this.setupEventListeners();
-        },
+        let v = null;
+        document.cookie.split(';').forEach(c => {
+        const [k, val] = c.trim().split('=');
+        if (k === name) v = decodeURIComponent(val);
+        });
+        return v;
+    }
+
+    function generatePDFReport() {
         
-        setupEventListeners: function() {
-            // Remove any existing handlers to prevent duplicates
-            $(document)
-                .off('click', '.card')
-                .off('click', '.modal-close')
-                .off('click', '.modal-overlay')
-                .off('click', '.modal-pdf-download')
-                .off('click', '.table-download-btn');
-            
-            // Card click handler
-            $(document).on('click', '.card', function(e) {
-                if ($(e.target).is('.download-btn, .download-btn *')) return;
-                const cardId = $(this).attr('class').split(' ')[1];
-                const districts = getSelectedDistricts(); // Get current district filters
-                ModalController.open(cardId, districts);
+        // loader + progress bar refs
+        const loader      = document.getElementById('pdfLoader');
+        const progressBar = document.getElementById('pdfProgressBar');
+        const progressTxt = document.getElementById('pdfProgressText');
+        const downloadBtn = document.querySelector('.modal-pdf-download');
+
+        const modal    = document.querySelector('.modal-container');
+        const cardId   = modal.dataset.cardId;
+        const downloadUrl = modal.dataset.pdfUrl;
+        const district   = modal.dataset.district || '';
+      
+        // Show loader & disable button
+        loader.classList.add('show');
+        downloadBtn.disabled = true;
+      
+        // Simulate progress
+        let prog = 0;
+        progressBar.style.width = '0%';
+        progressTxt.textContent = '0%';
+        const interval = setInterval(() => {
+          if (prog < 90) {
+            prog++;
+            progressBar.style.width = `${prog}%`;
+            progressTxt.textContent = `${prog}%`;
+          } else {
+            clearInterval(interval);
+          }
+        }, 50);
+      
+        // Build payload
+        const fd = new FormData();
+        fd.append('district', district);
+      
+        if (cardId === 'flagged-claims') {
+            fd.append('flagged_chart',   safeCanvasDataURL('flaggedClaimsChart'));
+            fd.append('age_chart',       safeCanvasDataURL('agePieChart'));
+            fd.append('gender_chart',    safeCanvasDataURL('genderPieChart'));
+            fd.append('age_callouts',    safeInnerHTML('ageCallouts'));
+            fd.append('gender_callouts', safeInnerHTML('genderCallouts'));
+        }
+        else if (cardId === 'high-value') {
+            ['Surgical','Medical'].forEach(type => {
+            const key = type.toLowerCase();
+
+            fd.append(`${key}_chart`,        safeCanvasDataURL(`highValue${type}Chart`));
+            fd.append(`${key}_age_chart`,    safeCanvasDataURL(`highValue${type}AgeChart`));
+            fd.append(`${key}_gender_chart`, safeCanvasDataURL(`highValue${type}GenderChart`));
+
+            fd.append(`${key}_age_callouts`,    safeInnerHTML(`highValue${type}AgeCallouts`));
+            fd.append(`${key}_gender_callouts`, safeInnerHTML(`highValue${type}GenderCallouts`));
             });
-            
-            // Close button handler
-            $(document).on('click', '.modal-close', function(e) {
+        }
+      
+        // Fire the request
+        fetch(downloadUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+          body: fd
+        })
+        .then(r => r.blob())
+        .then(blob => {
+          clearInterval(interval);
+          progressBar.style.width = '100%';
+          progressTxt.textContent = '100%';
+          setTimeout(() => {
+            loader.classList.remove('show');
+            downloadBtn.disabled = false;
+      
+            const url = URL.createObjectURL(blob);
+            const a   = document.createElement('a');
+            a.href    = url;
+            a.download = cardId === 'flagged-claims'
+              ? 'flagged_claims_report.pdf'
+              : 'High_Value_Claims_PDF_Report.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          }, 200);
+        })
+        .catch(err => {
+          console.error(err);
+          clearInterval(interval);
+          loader.classList.remove('show');
+          downloadBtn.disabled = false;
+        });
+    }
+      
+
+    const ModalController = {
+        init() {
+          $('#modalOverlay').hide().removeClass('show');
+          this.setupEventListeners();
+        },
+      
+        setupEventListeners() {
+            $(document).off('click.modal', '.card')
+                        .off('click.modal', '.modal-close')
+                        .off('click.modal', '.modal-overlay')
+                        .off('keyup.modal')
+                        .off('click.modal', '.modal-pdf-download')
+                        .off('click.modal', '.modal-container .table-download-btn');
+
+            $(document).off('.modal');
+        
+            // Card click → open modal
+            $(document).on('click.modal', '.card', (e) => {
+                if ($(e.target).is('.download-btn, .download-btn *')) return;
+                const cardId    = $(e.currentTarget).attr('class').split(' ')[1];
+                const districts = getSelectedDistricts();
+                this.open(cardId, districts);
+            });
+        
+            // Close
+            $(document).on('click.modal', '.modal-close', (e) => {
                 e.stopPropagation();
                 ModalController.close();
-            });
-            
+              });
+
             // Overlay click handler
             $(document).on('click', '.modal-overlay', function(e) {
                 if (e.target === this) ModalController.close();
             });
-            
-            // ESC key handler
-            $(document).on('keyup', function(e) {
-                if (e.key === 'Escape' && $('#modalOverlay').is(':visible')) {
-                    ModalController.close();
-                }
+        
+            // ESC key
+            $(document).on('keyup.modal', (e) => {
+            if (e.key === 'Escape' && $('#modalOverlay').is(':visible')) {
+                this.close();
+            }
+            });
+        
+            // PDF download (unchanged)
+            $(document).on('click.modal', '.modal-pdf-download', (e) => {
+                e.preventDefault();
+                generatePDFReport();
+            });
+        
+            // **Excel download in modal**
+            $(document).on('click.modal', '.modal-container .table-download-btn', (e) => {
+                e.preventDefault();
+                const $m        = $(e.currentTarget).closest('.modal-container');
+                const baseUrl   = $m.data('excel-url');
+                const district  = $m.data('district') || '';
+                let url         = baseUrl;
+                if (district) url += '?district=' + encodeURIComponent(district);
+                window.location.href = url;
             });
         },
-        
-        open: function(cardId, districts = []) {
-            const template = cardTemplates[cardId] || {
-                title: "Details",
-                content: `<div class="card-details"><p>Content not available</p></div>`
-            };
-
-            Object.values(window.highValueCharts).forEach(chart => chart.destroy());
-            window.highValueCharts = {};
-
-            // Set modal container class
-            const modalContainer = document.querySelector('.modal-container');
-            modalContainer.className = 'modal-container ' + cardId; // Reset and add card class
-            
-            $('#modalTitle').text(template.title);
-            $('#modalContent').html(`
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <p>Loading ${template.title}...</p>
-                </div>
-            `);
-            
-            $('#modalOverlay').fadeIn(200);
-            $('body').css('overflow', 'hidden');
-            
-            // Load content after short delay (for spinner visibility)
-            setTimeout(() => {
-                $('#modalContent').html(template.content);
-
-                const container = document.getElementById('highValueCharts');
-                if (container) container.offsetHeight;
-                
-                // If template has postRender, execute it with districts
-                if (template.postRender) {
-                    template.postRender(districts);
-                }
-                
-                $('.table-download-btn').click(function() {
-                    exportTableToExcel(cardId);
-                });
-
-                this.adjustModalScroll();
-            }, 300);
+      
+        open(cardId, districts = []) {
+          // 1) pull URLs off the clicked card
+          const $card      = $(`.card.${cardId}`);
+          const detailsUrl = $card.data('details-url');
+          const excelUrl   = $card.data('download-url');
+          const district   = $card.data('district') || '';
+      
+          // 2) stash them on the modal container
+          const $modalCont = $('#modalOverlay .modal-container')
+            .data('details-url', detailsUrl).attr('data-details-url', detailsUrl)
+            .data('excel-url',   excelUrl).  attr('data-excel-url',   excelUrl)
+            .data('district',    district). attr('data-district',    district);
+      
+          // 3) rest of your open() as before…
+          const template = cardTemplates[cardId] || { /* … */ };
+      
+          // destroy old charts, reset class, show spinner…
+          Object.values(window.highValueCharts).forEach(c=>c.destroy());
+          window.highValueCharts = {};
+      
+          const modalContainer = document.querySelector('#modalOverlay .modal-container');
+          modalContainer.className = 'modal-container ' + cardId;
+      
+          $('#modalTitle').text(template.title);
+          $('#modalContent').html(`
+            <div class="loading-spinner">
+              <div class="spinner"></div>
+              <p>Loading ${template.title}...</p>
+            </div>
+          `);
+          $('#modalOverlay').fadeIn(200);
+          $('body').css('overflow', 'hidden');
+      
+          // inject real content after spinner
+          setTimeout(() => {
+            $('#modalContent').html(template.content);
+            if (template.postRender) template.postRender(districts);
+            this.adjustModalScroll();
+          }, 300);
         },
-        
-        close: function() {
-            $('#modalOverlay').fadeOut(200);
-            $('body').css('overflow', 'auto');
+      
+        close() {
+          $('#modalOverlay').fadeOut(200);
+          $('body').css('overflow', 'auto');
         },
-
-        adjustModalScroll: function() {
-            // Reset scroll position when opening new modal
-            $('#modalContent').scrollTop(0);
-            
-            // Handle any dynamic content adjustments
-            const modalContent = $('#modalContent')[0];
-            if (modalContent.scrollHeight > modalContent.clientHeight) {
-                modalContent.style.overflowY = 'auto';
-            } else {
-                modalContent.style.overflowY = 'hidden';
-            }
+      
+        adjustModalScroll() {
+          const $c = $('#modalContent');
+          $c.scrollTop(0);
+          const el = $c[0];
+          el.style.overflowY = el.scrollHeight > el.clientHeight ? 'auto' : 'hidden';
         }
     };
     

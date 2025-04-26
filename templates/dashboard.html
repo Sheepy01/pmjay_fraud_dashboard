@@ -121,7 +121,9 @@
                         </div>
                         
                         <!-- High Value Claims Card -->
-                        <div class="card high-value">
+                        <div class="card high-value" 
+                        data-download-url="{% url 'download_high_value_claims' %}"
+                        data-district="{{ district_param|urlencode }}">
                             <button class="download-btn">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -350,8 +352,12 @@
 
     <!-- Modal Template -->
     <div class="modal-overlay" id="modalOverlay">
-        <div class="modal-container" data-download-url="{% url 'download_flagged_claims_report' %}"
-        data-district="{{ district_param|urlencode }}">
+        <div class="modal-container" 
+        data-excel-url=""
+        data-pdf-url="{% url 'download_flagged_claims_report' %}"
+        data-details-url=""
+        data-district="{{ district_param|urlencode }}"
+        >
             <!-- Loader -->
             <div id="pdfLoader" class="pdf-loading-overlay">
                 <div class="pdf-loading-content">
@@ -381,7 +387,7 @@
                 <!-- Table container -->
                 <div class="data-table-container">
                     <button class="table-download-btn">
-                        <i class="fas fa-download"></i> Export CSV
+                        <i class="fas fa-download"></i> Export Excel
                     </button>
                     <div class="table-footer">
                         Showing <span id="rowCount">0</span> records
@@ -425,6 +431,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+        window.PDF_URLS = {
+          flagged:   "{% url 'download_flagged_claims_report' %}",
+          highValue: "{% url 'download_high_value_claims_report' %}"
+        };
+    </script>
     <script src="{% static 'js/dashboard.js' %}"></script>
 </body>
 </html>

@@ -1,0 +1,151 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* First page */
+    @page :first {
+      size: A4 portrait;
+      margin: 5cm 1cm 1cm 1cm;
+      @top-center    { content: element(firstHeader) }
+      @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+    }
+    /* Rest */
+    @page {
+      size: A4 portrait;
+      margin: 3cm 1cm 1cm 1cm;
+      @top-center    { content: element(normalHeader) }
+      @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+    }
+    header#firstHeader { position: running(firstHeader) }
+    header#normalHeader { position: running(normalHeader) }
+    thead { display: table-header-group; }
+    body { font-family: sans-serif; font-size: 12px; }
+    /* Header */
+    header div { overflow:hidden; margin-bottom:10px; }
+    header img { max-height:40px; float:left; margin-right:10px; }
+    header h2 { text-align:center; line-height:40px; margin:0; font-size:16px; }
+    header .date { text-align:center; font-size:10px; }
+    header hr { border:none; border-bottom:1px solid #333; margin-top:5px; }
+    /* Table */
+    table { width:100%; border-collapse:collapse; margin-bottom:1em; font-size:11px; }
+    thead { background:rgb(82, 90, 130); }
+    th {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: left;
+      color: white
+    }
+    td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) { background:#fafafa; }
+    /* Charts */
+    .chart-section { page-break-before: always; margin-top:1em; }
+    .chart-section img { display:block; margin:0 auto 0.5em; max-width:100%; }
+    .callouts { font-size:10px; margin:0 auto 1em; width:80%; }
+  </style>
+</head>
+<body>
+
+  <!-- First-page header -->
+  <header id="firstHeader">
+    <div>
+      <img src="{{ logo_url }}" alt="Logo"/>
+      <h2>{{ title }}</h2>
+      <div class="date">Generated on {{ date }}</div>
+    </div><hr/>
+    <h2>HIGH VALUE CLAIMS REPORT</h2>
+  </header>
+
+  <!-- Subsequent pages header -->
+  <header id="normalHeader">
+    <div>
+      <img src="{{ logo_url }}" alt="Logo"/>
+      <h2>{{ title }}</h2>
+    </div><hr/>
+  </header>
+
+  <footer></footer>
+  <main>
+
+    <!-- SURGICAL SECTION -->
+    <section>
+      <h3>Surgical High-Value Claims</h3>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Claim ID</th><th>Patient</th><th>Hospital</th>
+          <th>District</th><th>Amount (₹)</th><th>Type</th>
+        </tr></thead>
+        <tbody>
+          {% for row in surgical_rows %}
+          <tr>
+            <td>{{ row.serial_no }}</td>
+            <td>{{ row.claim_id }}</td>
+            <td>{{ row.patient_name }}</td>
+            <td>{{ row.hospital_name }}</td>
+            <td>{{ row.district_name }}</td>
+            <td>{{ row.amount }}</td>
+            <td background:rgb(223, 0, 85); >{{ row.case_type }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SURGICAL CHARTS -->
+    <section class="chart-section">
+      <h3>District Distribution (Surgical)</h3>
+      <img src="data:image/png;base64,{{ surgical_chart_b64 }}" alt="">
+      <h4>Age Distribution</h4>
+      <img src="data:image/png;base64,{{ surgical_age_chart_b64 }}" alt="">
+      <div class="callouts">{{ surgical_age_callouts|safe }}</div>
+      <h4>Gender Distribution</h4>
+      <img src="data:image/png;base64,{{ surgical_gen_chart_b64 }}" alt="">
+      <div class="callouts">{{ surgical_gen_callouts|safe }}</div>
+    </section>
+
+    <!-- MEDICAL SECTION -->
+    <section class="chart-section">
+      <h3>Medical High-Value Claims</h3>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Claim ID</th><th>Patient</th><th>Hospital</th>
+          <th>District</th><th>Amount (₹)</th><th>Type</th>
+        </tr></thead>
+        <tbody>
+          {% for row in medical_rows %}
+          <tr>
+            <td>{{ row.serial_no }}</td>
+            <td>{{ row.claim_id }}</td>
+            <td>{{ row.patient_name }}</td>
+            <td>{{ row.hospital_name }}</td>
+            <td>{{ row.district_name }}</td>
+            <td>{{ row.amount }}</td>
+            <td>{{ row.case_type }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h4>District Distribution (Medical)</h4>
+      {% if medical_chart_b64 %}
+        <img src="data:image/png;base64,{{ medical_chart_b64 }}" alt="">
+      {% endif %}
+      <h4>Age Distribution</h4>
+      {% if medical_age_chart_b64 %}
+        <img src="data:image/png;base64,{{ medical_age_chart_b64 }}" alt="">
+      {% endif %}
+      <div class="callouts">{{ medical_age_callouts|safe }}</div>
+      <h4>Gender Distribution</h4>
+      {% if medical_gen_chart_b64 %}
+        <img src="data:image/png;base64,{{ medical_gen_chart_b64 }}" alt="">
+      {% endif %}
+      <div class="callouts">{{ medical_gen_callouts|safe }}</div>
+    </section>
+
+  </main>
+</body>
+</html>

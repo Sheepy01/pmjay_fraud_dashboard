@@ -2,6 +2,7 @@
 <!DOCTYPE html>
 <html>
     <head>
+      <meta charset="utf-8">
         <style>
           /* First page: 5cm top margin, includes date in header */
           @page :first {
@@ -120,14 +121,20 @@
           <!-- Chart + callouts sections -->
           <section class="chart-section">
             <h3>District-wise Distribution</h3>
-            <img src="data:image/png;base64,{{ flagged_b64 }}" alt="">
-      
+            {% if flagged_b64 %}
+              <img src="data:image/png;base64,{{ flagged_b64 }}" alt="">
+            {% endif %}
+            
             <h3>Age Group Distribution</h3>
-            <img src="data:image/png;base64,{{ age_b64 }}" alt="">
+            {% if age_b64 %}
+              <img src="data:image/png;base64,{{ age_b64 }}" alt="">
+            {% endif %}
             <div class="callouts">{{ age_callouts|safe }}</div>
-      
+            
             <h3>Gender Distribution</h3>
-            <img src="data:image/png;base64,{{ gender_b64 }}" alt="">
+            {% if gender_b64 %}
+              <img src="data:image/png;base64,{{ gender_b64 }}" alt="">
+            {% endif %}
             <div class="callouts">{{ gender_callouts|safe }}</div>
           </section>
         </main>
