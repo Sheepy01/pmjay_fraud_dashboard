@@ -47,6 +47,11 @@
     .chart-section { page-break-before: always; margin-top:1em; }
     .chart-section img { display:block; margin:0 auto 0.5em; max-width:100%; }
     .callouts { font-size:10px; margin:0 auto 1em; width:80%; }
+    .district-line {
+      text-align: center;
+      font-size: 10px;
+      margin: 4px 0 8px;
+    }
   </style>
 </head>
 <body>
@@ -59,6 +64,15 @@
       <div class="date">Generated on {{ date }}</div>
     </div><hr/>
     <h2>HIGH VALUE CLAIMS REPORT</h2>
+    <hr/>
+    <div class="district-line">
+      District:
+      {% if report_districts %}
+        {{ report_districts|join:", " }}
+      {% else %}
+        All
+      {% endif %}
+    </div>
   </header>
 
   <!-- Subsequent pages header -->
@@ -66,7 +80,8 @@
     <div>
       <img src="{{ logo_url }}" alt="Logo"/>
       <h2>{{ title }}</h2>
-    </div><hr/>
+    </div>
+    <hr/>
   </header>
 
   <footer></footer>

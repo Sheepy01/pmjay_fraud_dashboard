@@ -1674,6 +1674,11 @@ def download_flagged_claims_report(request):
             'amount':        case.claim_initiated_amount or 0,
             'reason':        'Suspicious hospital'
         })
+    report_districts = sorted({
+        row['district_name'] 
+        for row in table_rows 
+        if row['district_name'] and row['district_name'] != 'N/A'
+    })
 
     # 3) Render HTML via a dedicated template
     context = {
@@ -1681,6 +1686,7 @@ def download_flagged_claims_report(request):
         'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
         'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'table_rows':  table_rows,
+        'report_districts': report_districts,
         'flagged_b64': flagged_b64,
         'age_b64':     age_b64,
         'gender_b64':  gender_b64,
@@ -1820,6 +1826,11 @@ def download_high_value_claims_report(request):
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'SURGICAL'
         })
+    report_surgical_districts = sorted({
+        row['district_name'] 
+        for row in surgical_rows 
+        if row['district_name'] and row['district_name'] != 'N/A'
+    })
 
     # Medical
     medical_qs = Last24Hour.objects.filter(
@@ -1841,6 +1852,13 @@ def download_high_value_claims_report(request):
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'MEDICAL'
         })
+    report_medical_districts = sorted({
+        row['district_name'] 
+        for row in medical_rows 
+        if row['district_name'] and row['district_name'] != 'N/A'
+    })
+
+    report_districts = set(report_surgical_districts + report_medical_districts)
 
     # --- Render HTML ---
     context = {
@@ -1859,6 +1877,7 @@ def download_high_value_claims_report(request):
         'surgical_gen_callouts':    surgical_gen_callouts,
         'medical_age_callouts':     medical_age_callouts,
         'medical_gen_callouts':     medical_gen_callouts,
+        'report_districts':         report_districts,
     }
     html_string = render_to_string('high_value_claims_report.html', context)
 

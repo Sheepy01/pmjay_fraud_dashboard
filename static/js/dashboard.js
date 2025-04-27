@@ -475,12 +475,14 @@ $(document).ready(function() {
                 </div>
             `,
             postRender: function(districts) {
-                const modal = document.querySelector('.modal-container');
-                modal.dataset.cardId = 'flagged-claims';
-                modal.dataset.pdfUrl  = window.PDF_URLS.flagged;
                 this.initPagination(districts);
                 this.loadTableData(districts);
                 this.loadChartData(districts);
+                const selected = districts || [];
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.district = selected.join(',');
+                modal.dataset.cardId = 'flagged-claims';
+                modal.dataset.pdfUrl  = window.PDF_URLS.flagged;
             },
             initPagination: function(districts) {
                 this.currentPage = 1;
@@ -879,15 +881,15 @@ $(document).ready(function() {
             },
 
             postRender: function(districts) {
-                const selected = $('#districtSelect').val() || [];
-                const modal = document.querySelector('.modal-container');
-                modal.dataset.district = selected.join(',');
-                modal.dataset.cardId = 'high-value';
-                modal.dataset.pdfUrl  = window.PDF_URLS.highValue;
                 this.initPagination(districts);
                 const initialType = 'all';
                 this.handleCaseTypeChange(initialType, districts);
                 this.initCaseTypeButtons(districts);
+                const selected = districts || [];
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.district = selected.join(',');
+                modal.dataset.cardId = 'high-value';
+                modal.dataset.pdfUrl  = window.PDF_URLS.highValue;
             },
             handleCaseTypeChange: function(caseType, districts) {
                 this.loadTableData(caseType, districts);

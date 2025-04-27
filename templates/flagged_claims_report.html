@@ -69,6 +69,12 @@
             margin: 0 auto 1em;
             width: 80%;
           }
+
+          .district-line {
+            text-align: center;
+            font-size: 10px;
+            margin: 4px 0 8px;
+          }
         </style>
       </head>
       <body>
@@ -86,6 +92,14 @@
           </h2>
           <div style="text-align:center; font-size:10px;">Generated on {{ date }}</div>
           <hr/>
+          <div class="district-line">
+            District:
+            {% if report_districts %}
+              {{ report_districts|join:", " }}
+            {% else %}
+              All
+            {% endif %}
+          </div>
         </header>
       
         <footer></footer>
