@@ -921,7 +921,8 @@ $(document).ready(function() {
             },
             loadCharts: function(caseType, districts) {
                 const container = document.getElementById('highValueCharts');
-                container.innerHTML = caseType === 'all' ? `
+                if(caseType == 'all') {
+                    container.innerHTML = `
                     <div class="chart-group">
                         <!-- Bar Charts -->
                         <div class="combined-bar-header">
@@ -994,28 +995,31 @@ $(document).ready(function() {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                ` : `
-                    <div class="chart-group">
+                    </div>`; 
+                } else {
+                    const cap = this.capitalize(caseType);
+                    container.innerHTML = 
+                    `<div class="chart-group">
                         <div class="chart-container">
-                            <h4>District Distribution (${caseType})</h4>
-                            <canvas id="highValue${caseType}Chart"></canvas>
+                            <h4>District Distribution (${cap})</h4>
+                            <canvas id="highValue${cap}Chart"></canvas>
                         </div>
                         
                         <div class="dual-pie-container">
                             <div class="pie-card">
-                                <h4>${this.capitalize(caseType)} Age Distribution</h4>
-                                <canvas id="highValue${caseType}AgeChart"></canvas>
-                                <div class="chart-callouts" id="highValue${caseType}AgeCallouts"></div>
+                                <h4>${this.capitalize(cap)} Age Distribution</h4>
+                                <canvas id="highValue${cap}AgeChart"></canvas>
+                                <div class="chart-callouts" id="highValue${cap}AgeCallouts"></div>
                             </div>
                             <div class="pie-card">
-                                <h4>${this.capitalize(caseType)} Gender Distribution</h4>
-                                <canvas id="highValue${caseType}GenderChart"></canvas>
-                                <div class="chart-callouts" id="highValue${caseType}GenderCallouts"></div>
+                                <h4>${this.capitalize(cap)} Gender Distribution</h4>
+                                <canvas id="highValue${cap}GenderChart"></canvas>
+                                <div class="chart-callouts" id="highValue${cap}GenderCallouts"></div>
                             </div>
                         </div>
                     </div>
                 `;
+                }
         
                 if (caseType === 'all') {
                     this.loadChartData('all', districts, 'highValueAllChart');
@@ -1029,10 +1033,13 @@ $(document).ready(function() {
                     this.loadDemographics('surgical', districts, 'highValueSurgicalAgeChart', 'highValueSurgicalGenderChart', 
                         'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts');
                 } else {
-                    this.loadChartData(caseType, districts, `highValue${caseType}Chart`);
-                    this.loadDemographics(caseType, districts, `highValue${caseType}AgeChart`, 
-                        `highValue${caseType}GenderChart`, `highValue${caseType}AgeCallouts`, 
-                        `highValue${caseType}GenderCallouts`);
+                    const cap = this.capitalize(caseType);
+                    this.loadChartData(caseType, districts, `highValue${cap}Chart`);
+                    this.loadDemographics(caseType, districts, 
+                        `highValue${cap}AgeChart`, 
+                        `highValue${cap}GenderChart`, 
+                        `highValue${cap}AgeCallouts`, 
+                        `highValue${cap}GenderCallouts`);
                 }
             },
             loadChartData: function(caseType, districts, canvasId) {
@@ -2688,100 +2695,7 @@ $(document).ready(function() {
         document.getElementById(containerId).innerHTML = calloutHTML;
     }
 
-    // function getCookie(name) {
-    //     let cookieValue = null;
-    //     if (document.cookie && document.cookie !== '') {
-    //       document.cookie.split(';').forEach(c => {
-    //         const [k, v] = c.trim().split('=');
-    //         if (k === name) cookieValue = decodeURIComponent(v);
-    //       });
-    //     }
-    //     return cookieValue;
-    // }
-    
-    // // PDF Downloader
-    // const loader      = document.getElementById('pdfLoader');
-    // const progressBar = document.getElementById('pdfProgressBar');
-    // const progressTxt = document.getElementById('pdfProgressText');
-    // const downloadBtn = document.querySelector('.modal-pdf-download');
-    
-    // downloadBtn.addEventListener('click', () => {
-    // // Show overlay & disable button
-    // loader.classList.add('show');
-    // downloadBtn.disabled = true;
-    
-    // // Reset bar
-    // let progress = 0;
-    // progressBar.style.width = '0%';
-    // progressTxt.textContent = '0%';
-    
-    // // Simulate progress up to 90%
-    // const interval = setInterval(() => {
-    //     if (progress < 90) {
-    //         progress += 1;
-    //         progressBar.style.width = `${progress}%`;
-    //         progressTxt.textContent = `${progress}%`;
-    //     } else {
-    //         clearInterval(interval);
-    //     }
-    // }, 50);  // adjust speed by changing this value
-    
-    // // Gather data
-    // const container   = document.querySelector('.modal-container');
-    // const downloadUrl = container.dataset.pdfUrl;
-    // const district    = container.dataset.district || '';
-    // const flaggedPNG     = document.getElementById('flaggedClaimsChart').toDataURL();
-    // const agePNG         = document.getElementById('agePieChart').toDataURL();
-    // const genderPNG      = document.getElementById('genderPieChart').toDataURL();
-    // const ageCallouts    = document.getElementById('ageCallouts').innerHTML;
-    // const genderCallouts = document.getElementById('genderCallouts').innerHTML;
-    
-    // const formData = new FormData();
-    // formData.append('district',        district);
-    // formData.append('flagged_chart',   flaggedPNG);
-    // formData.append('age_chart',       agePNG);
-    // formData.append('gender_chart',    genderPNG);
-    // formData.append('age_callouts',    ageCallouts);
-    // formData.append('gender_callouts', genderCallouts);
-    
-    // // Fire request
-    // fetch(downloadUrl, {
-    //     method: 'POST',
-    //     headers: { 'X-CSRFToken': getCookie('csrftoken') },
-    //     body: formData,
-    // })
-    // .then(res => res.blob())
-    // .then(blob => {
-    //     // Stop timer, jump to 100%
-    //     clearInterval(interval);
-    //     progressBar.style.width = '100%';
-    //     progressTxt.textContent = '100%';
-    
-    //     // Small pause so 100% is visible
-    //     setTimeout(() => {
-    //     loader.classList.remove('show');
-    //     downloadBtn.disabled = false;
-    
-    //     // Trigger download
-    //     const url = URL.createObjectURL(blob);
-    //     const a   = document.createElement('a');
-    //     a.href    = url;
-    //     a.download = 'flagged_claims_report.pdf';
-    //     document.body.appendChild(a);
-    //     a.click();
-    //     a.remove();
-    //     URL.revokeObjectURL(url);
-    //     }, 200);
-    // })
-    // .catch(err => {
-    //     console.error(err);
-    //     clearInterval(interval);
-    //     loader.classList.remove('show');
-    //     downloadBtn.disabled = false;
-    // });
-    // });
-
-    // make sure getCookie is defined to fetch CSRF token…
+    // fetch CSRF token…
     function getCookie(name) {
         let v = null;
         document.cookie.split(';').forEach(c => {
@@ -2792,31 +2706,28 @@ $(document).ready(function() {
     }
 
     function generatePDFReport() {
-        
-        // loader + progress bar refs
         const loader      = document.getElementById('pdfLoader');
         const progressBar = document.getElementById('pdfProgressBar');
         const progressTxt = document.getElementById('pdfProgressText');
         const downloadBtn = document.querySelector('.modal-pdf-download');
-
-        const modal    = document.querySelector('.modal-container');
-        const cardId   = modal.dataset.cardId;
+        const modal       = document.querySelector('.modal-container');
+        const cardId      = modal.dataset.cardId;       // 'flagged-claims' or 'high-value'
         const downloadUrl = modal.dataset.pdfUrl;
-        const district   = modal.dataset.district || '';
+        const district    = modal.dataset.district || '';
       
         // Show loader & disable button
         loader.classList.add('show');
         downloadBtn.disabled = true;
       
-        // Simulate progress
+        // Simulate progress to 90%
         let prog = 0;
         progressBar.style.width = '0%';
-        progressTxt.textContent = '0%';
+        progressTxt.textContent  = '0%';
         const interval = setInterval(() => {
           if (prog < 90) {
             prog++;
             progressBar.style.width = `${prog}%`;
-            progressTxt.textContent = `${prog}%`;
+            progressTxt.textContent  = `${prog}%`;
           } else {
             clearInterval(interval);
           }
@@ -2827,40 +2738,65 @@ $(document).ready(function() {
         fd.append('district', district);
       
         if (cardId === 'flagged-claims') {
-            fd.append('flagged_chart',   safeCanvasDataURL('flaggedClaimsChart'));
-            fd.append('age_chart',       safeCanvasDataURL('agePieChart'));
-            fd.append('gender_chart',    safeCanvasDataURL('genderPieChart'));
-            fd.append('age_callouts',    safeInnerHTML('ageCallouts'));
-            fd.append('gender_callouts', safeInnerHTML('genderCallouts'));
+          ['flagged','age','gender'].forEach(key => {
+            const idMap = {
+              flagged: 'flaggedClaimsChart',
+              age:     'agePieChart',
+              gender:  'genderPieChart'
+            };
+            fd.append(`${key}_chart`, safeCanvasDataURL(idMap[key]));
+          });
+          ['age','gender'].forEach(key => {
+            fd.append(`${key}_callouts`, safeInnerHTML(key + 'Callouts'));
+          });
         }
         else if (cardId === 'high-value') {
-            ['Surgical','Medical'].forEach(type => {
+          // Determine which sub-type to include
+          const activeBtn = document.querySelector('.case-type-btn.active');
+          const caseType  = activeBtn?.dataset.type || 'all';  // 'all','surgical','medical'
+          fd.append('case_type', caseType);
+      
+          // Pick the right sections
+          const typesToDo = caseType === 'all'
+            ? ['Surgical','Medical']
+            : [ caseType.charAt(0).toUpperCase() + caseType.slice(1) ];
+      
+          typesToDo.forEach(type => {
             const key = type.toLowerCase();
-
-            fd.append(`${key}_chart`,        safeCanvasDataURL(`highValue${type}Chart`));
-            fd.append(`${key}_age_chart`,    safeCanvasDataURL(`highValue${type}AgeChart`));
-            fd.append(`${key}_gender_chart`, safeCanvasDataURL(`highValue${type}GenderChart`));
-
-            fd.append(`${key}_age_callouts`,    safeInnerHTML(`highValue${type}AgeCallouts`));
-            fd.append(`${key}_gender_callouts`, safeInnerHTML(`highValue${type}GenderCallouts`));
+            // Charts
+            ['chart','age_chart','gender_chart'].forEach(suffix => {
+              const field    = `${key}_${suffix}`;
+              const canvasId = `highValue${type}` + {
+                chart:       'Chart',
+                age_chart:   'AgeChart',
+                gender_chart:'GenderChart'
+              }[suffix];
+              fd.append(field, safeCanvasDataURL(canvasId));
             });
+            // Callouts
+            ['AgeCallouts','GenderCallouts'].forEach(suffix => {
+              const field = `${key}_` + suffix.toLowerCase();
+              fd.append(field, safeInnerHTML(`highValue${type}${suffix}`));
+            });
+          });
         }
       
         // Fire the request
         fetch(downloadUrl, {
-          method: 'POST',
+          method:  'POST',
           headers: { 'X-CSRFToken': getCookie('csrftoken') },
-          body: fd
+          body:    fd
         })
         .then(r => r.blob())
         .then(blob => {
           clearInterval(interval);
           progressBar.style.width = '100%';
-          progressTxt.textContent = '100%';
+          progressTxt.textContent  = '100%';
           setTimeout(() => {
             loader.classList.remove('show');
             downloadBtn.disabled = false;
       
+            // Trigger download
             const url = URL.createObjectURL(blob);
             const a   = document.createElement('a');
             a.href    = url;
@@ -2879,8 +2815,7 @@ $(document).ready(function() {
           loader.classList.remove('show');
           downloadBtn.disabled = false;
         });
-    }
-      
+    }      
 
     const ModalController = {
         init() {
@@ -3008,6 +2943,4 @@ $(document).ready(function() {
         $('#modalOverlay').hide().removeClass('show');
         ModalController.init();
     });
-
-
 });

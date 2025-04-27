@@ -1781,113 +1781,112 @@ def download_high_value_claims(request):
     resp['Content-Disposition'] = 'attachment; filename="high_value_claims_excel_report.xlsx"'
     return resp
 
+import datetime
+from django.template.loader import render_to_string
+from django.http import HttpResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_protect
+from django.db.models import Q
+from weasyprint import HTML
+
+from .models import Last24Hour
+
 @require_POST
 @csrf_protect
 def download_high_value_claims_report(request):
-    # --- Read inputs ---
-    district = request.POST.get('district', '')
-    districts = district.split(',') if district else []
+    # 1) Read inputs
+    case_type      = request.POST.get('case_type', 'all').lower()   # 'all','surgical','medical'
+    district_param = request.POST.get('district', '')
+    districts      = [d for d in district_param.split(',') if d]
 
-    # Helper to strip data-url prefix
-    def strip_b64(u): return u.split('base64,', 1)[1]
+    # 2) Helper for charts
+    def strip_b64(key):
+        val = request.POST.get(key, '')
+        return val.split('base64,',1)[1] if 'base64,' in val else ''
 
-    # Charts
-    surgical_chart_b64       = strip_b64(request.POST['surgical_chart'])
-    surgical_age_chart_b64   = strip_b64(request.POST['surgical_age_chart'])
-    surgical_gen_chart_b64   = strip_b64(request.POST['surgical_gender_chart'])
-    medical_chart_b64        = strip_b64(request.POST['medical_chart'])
-    medical_age_chart_b64    = strip_b64(request.POST['medical_age_chart'])
-    medical_gen_chart_b64    = strip_b64(request.POST['medical_gender_chart'])
+    surgical_chart_b64     = strip_b64('surgical_chart')
+    surgical_age_chart_b64 = strip_b64('surgical_age_chart')
+    surgical_gen_chart_b64 = strip_b64('surgical_gender_chart')
+    medical_chart_b64      = strip_b64('medical_chart')
+    medical_age_chart_b64  = strip_b64('medical_age_chart')
+    medical_gen_chart_b64  = strip_b64('medical_gender_chart')
 
     # Callouts
-    surgical_age_callouts    = request.POST.get('surgical_age_callouts', '')
-    surgical_gen_callouts    = request.POST.get('surgical_gender_callouts', '')
-    medical_age_callouts     = request.POST.get('medical_age_callouts', '')
-    medical_gen_callouts     = request.POST.get('medical_gender_callouts', '')
+    surgical_age_callouts = request.POST.get('surgical_age_callouts','')
+    surgical_gen_callouts = request.POST.get('surgical_gender_callouts','')
+    medical_age_callouts  = request.POST.get('medical_age_callouts','')
+    medical_gen_callouts  = request.POST.get('medical_gender_callouts','')
 
-    # --- Fetch full data (no pagination) ---
-    # Surgical
-    surgical_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        case_type__iexact='SURGICAL',
-        claim_initiated_amount__gte=100000
-    )
+    # 3) Build querysets based on case_type
+    base_qs = Last24Hour.objects.filter(hospital_type='P')
+    surgical_qs = base_qs.none()
+    medical_qs  = base_qs.none()
+
+    if case_type in ['all','surgical']:
+        surgical_qs = base_qs.filter(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
+    if case_type in ['all','medical']:
+        medical_qs  = base_qs.filter(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
+
     if districts:
         surgical_qs = surgical_qs.filter(district_name__in=districts)
+        medical_qs  = medical_qs.filter(district_name__in=districts)
 
-    surgical_rows = []
-    for i, c in enumerate(surgical_qs, start=1):
-        surgical_rows.append({
-            'serial_no':     i,
+    # 4) Serialize rows
+    surgical_rows = [
+        {
+            'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
             'hospital_name': c.hospital_name or 'N/A',
             'district_name': c.district_name or 'N/A',
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'SURGICAL'
-        })
-    report_surgical_districts = sorted({
-        row['district_name'] 
-        for row in surgical_rows 
-        if row['district_name'] and row['district_name'] != 'N/A'
-    })
-
-    # Medical
-    medical_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        case_type__iexact='MEDICAL',
-        claim_initiated_amount__gte=25000
-    )
-    if districts:
-        medical_qs = medical_qs.filter(district_name__in=districts)
-
-    medical_rows = []
-    for i, c in enumerate(medical_qs, start=1):
-        medical_rows.append({
-            'serial_no':     i,
+        }
+        for i, c in enumerate(surgical_qs)
+    ]
+    medical_rows = [
+        {
+            'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
             'hospital_name': c.hospital_name or 'N/A',
             'district_name': c.district_name or 'N/A',
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'MEDICAL'
-        })
-    report_medical_districts = sorted({
-        row['district_name'] 
-        for row in medical_rows 
-        if row['district_name'] and row['district_name'] != 'N/A'
-    })
+        }
+        for i, c in enumerate(medical_qs)
+    ]
 
-    report_districts = set(report_surgical_districts + report_medical_districts)
+    # 5) Compute report_districts as a sorted list
+    combined = [r['district_name'] for r in surgical_rows + medical_rows if r['district_name'] and r['district_name'] != 'N/A']
+    report_districts = sorted(set(combined))
 
-    # --- Render HTML ---
+    # 6) Render
     context = {
-        'logo_url':                 request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':                    'PMJAY FRAUD DETECTION ANALYSIS REPORT',
-        'date':                     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'surgical_rows':            surgical_rows,
-        'medical_rows':             medical_rows,
-        'surgical_chart_b64':       surgical_chart_b64,
-        'surgical_age_chart_b64':   surgical_age_chart_b64,
-        'surgical_gen_chart_b64':   surgical_gen_chart_b64,
-        'medical_chart_b64':        medical_chart_b64,
-        'medical_age_chart_b64':    medical_age_chart_b64,
-        'medical_gen_chart_b64':    medical_gen_chart_b64,
-        'surgical_age_callouts':    surgical_age_callouts,
-        'surgical_gen_callouts':    surgical_gen_callouts,
-        'medical_age_callouts':     medical_age_callouts,
-        'medical_gen_callouts':     medical_gen_callouts,
-        'report_districts':         report_districts,
+        'logo_url':                request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'title':                   'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'date':                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'case_type':               case_type,
+        'report_districts':        report_districts,
+        'surgical_rows':           surgical_rows,
+        'medical_rows':            medical_rows,
+        'surgical_chart_b64':      surgical_chart_b64,
+        'surgical_age_chart_b64':  surgical_age_chart_b64,
+        'surgical_gen_chart_b64':  surgical_gen_chart_b64,
+        'medical_chart_b64':       medical_chart_b64,
+        'medical_age_chart_b64':   medical_age_chart_b64,
+        'medical_gen_chart_b64':   medical_gen_chart_b64,
+        'surgical_age_callouts':   surgical_age_callouts,
+        'surgical_gen_callouts':   surgical_gen_callouts,
+        'medical_age_callouts':    medical_age_callouts,
+        'medical_gen_callouts':    medical_gen_callouts,
     }
     html_string = render_to_string('high_value_claims_report.html', context)
+    pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
 
-    # --- Generate PDF ---
-    html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
-    pdf  = html.write_pdf()
-
-    resp = HttpResponse(pdf, content_type='application/pdf')
-    resp['Content-Disposition'] = 'attachment; filename="High_Value_Claims_PDF_Report.pdf"'
-    return resp
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="High_Value_Claims_PDF_Report.pdf"'
+    return response
 
 @login_required(login_url='login')
 def dashboard_view(request):
