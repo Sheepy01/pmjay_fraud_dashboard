@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  fraud-detection:
+    build: .
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"  # Explicit localhost binding
+    environment:
+      - DJANGO_SETTINGS_MODULE=pmjay_fraud_dashboard.settings
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver"

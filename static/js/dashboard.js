@@ -39,6 +39,30 @@ $(document).ready(function() {
         }
     }
 
+    // "Generated on"
+    (function fillGeneratedOn(){
+        const now = new Date();
+      
+        // date options (dd/mm/yyyy)
+        const dateOpts = {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          timeZone: 'Asia/Kolkata'
+        };
+        // time options (HH:MM:SS)
+        const timeOpts = {
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Kolkata'
+        };
+      
+        const dateStr = now.toLocaleDateString('en-GB', dateOpts);
+        const timeStr = now.toLocaleTimeString('en-GB', timeOpts);
+      
+        document.querySelector('#generatedOn .gen-date').textContent      = dateStr;
+        document.querySelector('#generatedOn .gen-time').textContent      = timeStr;
+        document.querySelector('#generatedOn .gen-separator').textContent = ', ';
+      })();
+
     // ======================
     // District Dropdown (jQuery)
     // ======================
@@ -234,6 +258,9 @@ $(document).ready(function() {
             url: '/get-high-value-claims/',
             method: 'GET',
             data: { district: districts.join(',') },
+            beforeSend: function() {
+                $('.high-value .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
             success: function(response) {
                 // console.log("Full Response:", response);
                 
@@ -276,11 +303,13 @@ $(document).ready(function() {
 
     function updateHospitalBedCases(districts = []) {
         // $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
-        
         $.ajax({
             url: '/get-hospital-bed-cases/',
             method: 'GET',
             data: { district: districts.join(',') },
+            beforeSend: function() {
+                $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
             success: function(response) {
                 // Update main card
                 $('.hospital-beds .card-value').text(response.total.toLocaleString());
@@ -308,6 +337,27 @@ $(document).ready(function() {
         });
     }
 
+    $(document).on('click', '.card.hospital-beds .download-btn', function(e){
+        e.preventDefault();
+        const $card    = $(this).closest('.card.hospital-beds');
+        let   url      = $card.data('download-url');
+        const district = $card.data('district') || '';
+      
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+      });
+      
+      // Modal Excel download (works for any card)
+      $(document).on('click', '.modal-container .table-download-btn', function(e){
+        e.preventDefault();
+        const $modal   = $(this).closest('.modal-container');
+        let   url      = $modal.data('excel-url');
+        const district = $modal.data('district') || '';
+      
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+      });
+
     function updateFamilyIdCases(districts = []) {
         $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
         
@@ -315,6 +365,9 @@ $(document).ready(function() {
             url: '/get-family-id-cases/',
             method: 'GET',
             data: { district: districts.join(',') },
+            beforeSend: function() {
+                $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
             success: function(response) {
                 // Update main card
                 $('.family-id .card-value').text(response.total.toLocaleString());
@@ -339,10 +392,33 @@ $(document).ready(function() {
         });
     }
 
+    // Main‐card Excel download for Family ID Cases
+    $(document).on('click', '.card.family-id .download-btn', function(e){
+        e.preventDefault();
+        const $card    = $(this).closest('.card.family-id');
+        let   url      = $card.data('download-url');
+        const district = $card.data('district') || '';
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+    });
+    
+    // Modal “Export Excel” (works for all cards once data-excel-url is set)
+    $(document).on('click', '.modal-container .table-download-btn', function(e){
+        e.preventDefault();
+        const $modal   = $(this).closest('.modal-container');
+        let   url      = $modal.data('excel-url');
+        const district = $modal.data('district') || '';
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+    });
+
     function updateGeoAnomalies(districts = []) {
         $.ajax({
             url: '/get-geo-anomalies/',
             data: { district: districts.join(',') },
+            beforeSend: function() {
+                $('.geo-anomalies .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
             success: function(response) {
                 $('.geo-anomalies .card-value').text(response.total.toLocaleString());
                 $('.geo-anomalies .time-metric:nth-child(1) .time-value').text(response.total.toLocaleString());
@@ -353,10 +429,34 @@ $(document).ready(function() {
         });
     }
 
+    // Main-card download
+    $(document).on('click', '.card.geo-anomalies .download-btn', function(e){
+        e.preventDefault();
+        const $card    = $(this).closest('.card.geo-anomalies');
+        let   url      = $card.data('download-url');
+        const district = $card.data('district') || '';
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+    });
+    
+    // Modal “Export Excel” (shared)
+    $(document).on('click', '.modal-container .table-download-btn', function(e){
+        e.preventDefault();
+        const $modal   = $(this).closest('.modal-container');
+        let   url      = $modal.data('excel-url');
+        const district = $modal.data('district') || '';
+        if (district) url += '?district=' + encodeURIComponent(district);
+        window.location.href = url;
+    });
+  
+
     function updateOphthalmology(districts = []) {
         $.ajax({
             url: '/get-ophthalmology-cases/',
             data: { district: districts.join(',') },
+            beforeSend: function() {
+                $('.ophthalmology .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
+            },
             success: function(response) {
                 // Main card
                 $('.ophthalmology .card-value').text(response.total.toLocaleString());
@@ -379,6 +479,31 @@ $(document).ready(function() {
             }
         });
     }
+
+    // 1) Main-card download for Ophthalmology
+    $(document).on('click', '.card.ophthalmology .download-btn', function(e) {
+        e.preventDefault();
+        const $card   = $(this).closest('.card.ophthalmology');
+        let   url     = $card.data('download-url');
+        const district= $card.data('district') || '';
+        // default “all” sheet
+        url += `?type=all`;
+        if (district) url += `&district=${encodeURIComponent(district)}`;
+        window.location.href = url;
+    });
+    
+    // 2) Modal “Export Excel” (works for all sub-types)
+    $(document).on('click', '.modal-container .table-download-btn', function(e) {
+        e.preventDefault();
+        const $modal    = $(this).closest('.modal-container');
+        let   url       = $modal.data('excel-url');
+        const district  = $modal.data('district') || '';
+        // grab the active violationType from your controller
+        const type      = ModalController.currentViolationType || 'all';
+        url += `?type=${type}`;
+        if (district) url += `&district=${encodeURIComponent(district)}`;
+        window.location.href = url;
+    });
 
     // Initialize
     $(document).ready(function() {
@@ -627,10 +752,12 @@ $(document).ready(function() {
                 
                 const ctx = canvas.getContext('2d');
                 
-                // Destroy existing chart
-                // if (window.flaggedClaimsChart) {
-                //     window.flaggedClaimsChart.destroy();
-                // }
+                if (
+                    window.flaggedClaimsChart &&
+                    typeof window.flaggedClaimsChart.destroy === 'function'
+                ) {
+                    window.flaggedClaimsChart.destroy();
+                }
                 
                 window.flaggedClaimsChart = new Chart(ctx, {
                     type: 'bar',
@@ -690,10 +817,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
                 
-                // Destroy existing chart
-                // if (window[canvasId]) {
-                //     window[canvasId].destroy();
-                // }
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                ) {
+                    window[canvasId].destroy();
+                }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'doughnut',
@@ -1251,6 +1380,10 @@ $(document).ready(function() {
                 this.initPagination(districts);
                 this.loadTableData(districts);
                 this.loadChartData(districts);
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.cardId = 'hospital-beds';
+                modal.dataset.pdfUrl  = window.PDF_URLS.hospitalBeds;
+                modal.dataset.district = (districts || []).join(',');
             },
             initPagination: function(districts) {
                 this.currentPage = 1;
@@ -1304,7 +1437,10 @@ $(document).ready(function() {
                 const ctx = document.getElementById('hospitalDistrictChart')?.getContext('2d');
                 if (!ctx) return;
 
-                if (window.hospitalDistrictChart) {
+                if (
+                    window.hospitalDistrictChart &&
+                    typeof window.hospitalDistrictChart.destroy === 'function'
+                ) {
                     window.hospitalDistrictChart.destroy();
                 }
 
@@ -1467,6 +1603,10 @@ $(document).ready(function() {
                 this.initPagination(districts);
                 this.loadTableData(districts);
                 this.loadCharts(districts);
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.cardId   = 'family-id';
+                modal.dataset.pdfUrl    = window.PDF_URLS.familyId;
+                modal.dataset.district  = (districts || []).join(',');
             },
             initPagination: function(districts) {
                 this.currentPage = 1;
@@ -1536,8 +1676,14 @@ $(document).ready(function() {
             renderBarChart: function(canvasId, data) {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
+                console.log(canvasId);
 
-                if (window[canvasId]) window[canvasId].destroy();
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'bar',
@@ -1584,7 +1730,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (window[canvasId]) window[canvasId].destroy();
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'doughnut',
@@ -1759,6 +1910,10 @@ $(document).ready(function() {
                 this.initPagination(districts);
                 this.loadTableData(districts);
                 this.loadCharts(districts);
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.cardId   = 'geo-anomalies';
+                modal.dataset.pdfUrl    = window.PDF_URLS.geoAnomalies;
+                modal.dataset.district  = (districts || []).join(',');
             },
             initPagination: function(districts) {
                 this.currentPage = 1;
@@ -1821,7 +1976,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (window[canvasId]) window[canvasId].destroy();
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'bar',
@@ -1868,7 +2028,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (window[canvasId]) window[canvasId].destroy();
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'doughnut',
@@ -2031,6 +2196,11 @@ $(document).ready(function() {
                 this.initViolationTypeButtons(districts);
                 this.loadTableData('all', districts);
                 this.loadCharts('all', districts);
+                const modal = document.querySelector('.modal-container');
+                modal.dataset.cardId         = 'ophthalmology';
+                modal.dataset.pdfUrl         = window.PDF_URLS.ophthalmology;
+                modal.dataset.district       = (districts || []).join(',');
+                modal.dataset.violationType  = this.currentViolationType;
             },
             initPagination: function(districts) {
                 this.currentPage = 1;
@@ -2122,6 +2292,9 @@ $(document).ready(function() {
                     btn.addClass('active');
                     
                     this.currentViolationType = violationType;
+                    document
+                        .querySelector('.modal-container')
+                        .dataset.violationType = violationType;
                     this.currentPage = 1;
                     this.loadTableData(violationType, districts);
                     this.loadCharts(violationType, districts);
@@ -2350,9 +2523,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (window.ophthCharts?.[canvasId]) {
-                    window.ophthCharts[canvasId].destroy();
-                }
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window.ophthCharts = window.ophthCharts || {};
                 window.ophthCharts[canvasId] = new Chart(ctx, {
@@ -2428,9 +2604,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (window.ophthCharts?.[canvasId]) {
-                    window.ophthCharts[canvasId].destroy();
-                }
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                  ) {
+                    window[canvasId].destroy();
+                  }
                 
                 window.ophthCharts = window.ophthCharts || {};
                 window.ophthCharts[canvasId] = new Chart(ctx, {
@@ -2780,6 +2959,80 @@ $(document).ready(function() {
             });
           });
         }
+        else if(cardId === 'hospital-beds') {
+            fd.append('hospital_chart',
+                safeCanvasDataURL('hospitalDistrictChart')
+            );
+        }
+        else if(cardId === 'family-id') {
+            // bar chart
+            fd.append(
+                'family_chart',
+                safeCanvasDataURL('familyViolationsChart')
+            );
+            // pie charts
+            fd.append(
+                'family_age_chart',
+                safeCanvasDataURL('familyAgeChart')
+            );
+            fd.append(
+                'family_gender_chart',
+                safeCanvasDataURL('familyGenderChart')
+            );
+            // callouts
+            fd.append(
+                'age_callouts',
+                safeInnerHTML('familyAgeCallouts')
+            );
+            fd.append(
+                'gender_callouts',
+                safeInnerHTML('familyGenderCallouts')
+            );
+        }
+        else if (cardId === 'geo-anomalies') {
+            // Bar chart
+            fd.append('geo_chart',
+              safeCanvasDataURL('geoViolationsChart')
+            );
+            // Pie charts
+            fd.append('geo_age_chart',
+              safeCanvasDataURL('geoAgeChart')
+            );
+            fd.append('geo_gender_chart',
+              safeCanvasDataURL('geoGenderChart')
+            );
+            // Callouts
+            fd.append('geo_age_callouts',
+              safeInnerHTML('geoAgeCallouts')
+            );
+            fd.append('geo_gender_callouts',
+              safeInnerHTML('geoGenderCallouts')
+            );
+        }
+        else if (cardId === 'ophthalmology') {
+            const violationType = modal.dataset.violationType || 'all';
+            fd.append('violation_type', violationType);
+          
+            // bar charts
+            // combined (all), age, ot, preauth
+            ['Combined','Age','Ot','Preauth'].forEach(section => {
+              const key = section.toLowerCase();
+              // e.g. 'ophthCombinedChart', 'ophthAgeChart', etc.
+              const canvasId = `ophth${section}Chart`;
+              fd.append(`${key}_chart`, safeCanvasDataURL(canvasId));
+            });
+          
+            // pie charts & callouts
+            ['All','Age','Ot','Preauth'].forEach(section => {
+              const low = section.toLowerCase();
+              // pie charts
+              fd.append(`${low}_age_chart`,    safeCanvasDataURL(`ophth${section}AgeChart`));
+              fd.append(`${low}_gender_chart`, safeCanvasDataURL(`ophth${section}GenderChart`));
+              // callouts
+              fd.append(`${low}_age_callouts`,    safeInnerHTML(`ophth${section}AgeCallouts`));
+              fd.append(`${low}_gender_callouts`, safeInnerHTML(`ophth${section}GenderCallouts`));
+            });
+        }
       
         // Fire the request
         fetch(downloadUrl, {
@@ -2885,7 +3138,8 @@ $(document).ready(function() {
           const district   = $card.data('district') || '';
       
           // 2) stash them on the modal container
-          const $modalCont = $('#modalOverlay .modal-container')
+          const $modalCont = $('#modalOverlay .modal-container');
+          $modalCont
             .data('details-url', detailsUrl).attr('data-details-url', detailsUrl)
             .data('excel-url',   excelUrl).  attr('data-excel-url',   excelUrl)
             .data('district',    district). attr('data-district',    district);

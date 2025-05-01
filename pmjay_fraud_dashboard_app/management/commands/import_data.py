@@ -78,7 +78,7 @@ class Command(BaseCommand):
         # 4) Import Last 24 Hours data (Dump sheet)
         # -------------------------------------------------------------------
         try:
-            l24_df = pd.read_excel('data/Last 24 Hours Bihar Reports 05-02-2025.xlsx', sheet_name='Dump')
+            l24_df = pd.read_excel('data/Combined_Last24Hours.xlsx', sheet_name='Dump')
             l24_df.columns = l24_df.columns.str.strip()
 
             l24_instances = []
@@ -106,6 +106,7 @@ class Command(BaseCommand):
                         gender = str(row['Gender']).strip().upper(),
                         hospital_name = str(row['Hospital Name']).strip().upper(),
                         hospital_state_name = str(row['Hospital State Name']).strip().upper(),
+                        family_id = str(row['Family Id']).strip(),
                     )
                 )
             Last24Hour.objects.bulk_create(l24_instances, ignore_conflicts=True)

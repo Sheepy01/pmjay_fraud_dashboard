@@ -1,0 +1,185 @@
+:root {
+    --primary-color: #2c3e50;
+    --secondary-color: #3498db;
+    --accent-color: #e74c3c;
+    --light-color: #ecf0f1;
+    --dark-color: #2c3e50;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Body with background image fallback */
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    /* Background with fallback */
+    background-image: url("/static/images/login/login_bg.png");
+    background-size: cover;
+}
+
+/* Fallback if image fails to load */
+body:before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(29, 41, 53, 0.2); /* Dark overlay */
+    z-index: -1; /* Behind everything */
+}
+
+/* Plexus Background */
+.plexus-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none; /* Allows clicks to pass through */
+}
+
+.plexus-background canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0.7;
+    mix-blend-mode: screen; /* Better blending with background */
+}
+
+/* Login Container */
+.login-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 400px;
+    padding: 40px;
+    z-index: 10;
+    
+    /* Enhanced glassmorphism */
+    background: rgb(229, 229, 229);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid rgba(6, 0, 72, 0.532);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+    
+    transition: all 0.5s ease;
+}
+
+.login-container.slide-up {
+    transform: translate(-50%, -150vh);
+    opacity: 0;
+}
+
+/* Logo */
+.logo {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.logo img {
+    width: 100px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+/* Form Elements */
+.login-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.login-header h1 {
+    color: var(--dark-color);
+    font-size: 24px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.login-form .form-group {
+    margin-bottom: 25px;
+    position: relative;
+}
+
+.login-form .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--dark-color);
+    font-weight: 500;
+}
+
+.login-form .form-group input {
+    width: 100%;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+    font-size: 16px;
+    transition: all 0.3s;
+}
+
+.login-form .form-group input:focus {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+    outline: none;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.login-form .form-group i {
+    position: absolute;
+    right: 15px;
+    top: 40px;
+    color: rgba(0, 0, 0, 0.3);
+}
+
+.btn-login {
+    width: 100%;
+    padding: 12px;
+    background: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-login:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.error-message {
+    color: var(--accent-color);
+    text-align: center;
+    margin-top: 15px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* Dashboard Container */
+.dashboard-container {
+    position: absolute;
+    top: 100vh;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    transition: transform 0.8s ease;
+    z-index: 5;
+}
+
+.dashboard-container.slide-up {
+    transform: translateY(-100vh);
+}

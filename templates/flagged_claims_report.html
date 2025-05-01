@@ -13,12 +13,12 @@
           }
 
           /* All subsequent pages: 3cm top margin, no date in header */
-        @page {
-            size: A4 portrait;
-            margin: 3cm 1cm 1cm 1cm;
-            @top-center    { content: element(normalHeader) }
-            @bottom-center { content: "Page " counter(page) " of " counter(pages) }
-        }
+          @page {
+              size: A4 portrait;
+              margin: 3cm 1cm 1cm 1cm;
+              @top-center    { content: element(normalHeader) }
+              @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+          }
       
           /* Running elements */
           #firstHeader { position: running(firstHeader) }

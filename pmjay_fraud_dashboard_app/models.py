@@ -11,6 +11,13 @@ class SuspiciousHospital(models.Model):
         return self.hospital_name
 
 class Last24Hour(models.Model):
+    class Meta:
+        indexes = [
+            models.Index(fields=['hospital_type', 'procedure_code']),
+            models.Index(fields=['preauth_initiated_date']),
+            models.Index(fields=['district_name']),
+            models.Index(fields=['age_years']),
+        ]
     registration_id = models.CharField(max_length=100, null=True, blank=True)
     case_id = models.CharField(max_length=100, null=True, blank=True)
     member_id = models.CharField(max_length=100, null=True, blank=True)
@@ -70,4 +77,5 @@ class Last24Hour(models.Model):
     
 class HospitalBeds(models.Model):
     hospital_id = models.CharField(max_length=50, unique=True)
+    hospital_name = models.CharField(max_length=50, null=True, blank=True)
     bed_strength = models.IntegerField()

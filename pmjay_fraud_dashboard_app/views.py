@@ -1,12 +1,13 @@
 from django.db.models import Sum, Q, Avg, F, Func, Count, Subquery, Max
 from .models import Last24Hour, SuspiciousHospital, HospitalBeds
+from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Case, When, Value, CharField
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_protect
-from django.contrib.auth import login as auth_login
 from django.template.loader import render_to_string
+from django.contrib.auth import login as auth_login
 from weasyprint.text.fonts import FontConfiguration
 from django.http import JsonResponse, HttpResponse
 from django.db.models.functions import TruncDate
@@ -20,9 +21,10 @@ from datetime import timedelta
 from weasyprint import HTML
 import pandas as pd
 import datetime
+import random
 import re
 import io
-from django.views.decorators.http import require_http_methods
+from django.core.management import call_command
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -36,6 +38,7 @@ def login_view(request):
         user = authenticate(request, username=request.POST['username'], password=request.POST['password'])
         if user is not None:
             login(request, user)
+            call_command('process_new_files')
             return redirect('dashboard')
         else:
             error = "Invalid username or password"
@@ -461,7 +464,7 @@ def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
 
@@ -540,7 +543,7 @@ def get_hospital_bed_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     
     # 1. Load bed strengths
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -608,7 +611,7 @@ def hospital_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     
     result = (
         Last24Hour.objects
@@ -633,7 +636,7 @@ def get_family_id_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
     
@@ -726,20 +729,24 @@ def get_family_id_cases_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     
-    # Get all individual claims from suspicious families
+    # Subquery: Get family_ids with more than 2 cases today
+    suspicious_families = Last24Hour.objects.annotate(
+        day=TruncDate('preauth_initiated_date')
+    ).filter(
+        day=today
+    ).values('family_id', 'day').annotate(
+        count=Count('id')
+    ).filter(
+        count__gt=2
+    ).values('family_id')
+    
+    # Main query: Cases for those suspicious families today
     cases = Last24Hour.objects.filter(
-        Q(hospital_type='P') &
-        Q(family_id__in=Subquery(
-            Last24Hour.objects
-            .annotate(day=TruncDate('preauth_initiated_date'))
-            .values('family_id', 'day')
-            .annotate(count=Count('id'))
-            .filter(count__gt=2)
-            .values('family_id')
-        )) &
-        Q(preauth_initiated_date__date=today)
+        hospital_type='P',
+        family_id__in=Subquery(suspicious_families),
+        preauth_initiated_date__date=today
     ).order_by('family_id', 'preauth_initiated_date')
     
     if districts:
@@ -773,52 +780,72 @@ def get_family_id_cases_details(request):
         }
     })
 
+
 def get_family_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    # Get count of unique families per district
-    result = (
-        Last24Hour.objects
-        .filter(hospital_type='P')
-        .annotate(day=TruncDate('preauth_initiated_date'))
-        .values('family_id', 'day', 'district_name')
-        .annotate(count=Count('id'))
-        .filter(count__gt=2)
-        .values('district_name')
-        .annotate(family_count=Count('family_id', distinct=True))
-        .order_by('-family_count')
+    today = date(2025, 2, 5)
+    
+    # Subquery: Get family_ids with more than 2 cases today
+    suspicious_families = Last24Hour.objects.annotate(
+        day=TruncDate('preauth_initiated_date')
+    ).filter(
+        day=today
+    ).values('family_id', 'day').annotate(
+        count=Count('id')
+    ).filter(
+        count__gt=2
+    ).values('family_id')
+    
+    # Main query: Count number of unique families per district
+    result = Last24Hour.objects.filter(
+        hospital_type='P',
+        family_id__in=Subquery(suspicious_families),
+        preauth_initiated_date__date=today
     )
     
     if districts:
         result = result.filter(district_name__in=districts)
+    
+    result = result.values('district_name').annotate(
+        family_count=Count('family_id', distinct=True)
+    ).order_by('-family_count')
     
     return JsonResponse({
         'districts': [item['district_name'] for item in result],
         'counts': [item['family_count'] for item in result]
     })
 
+
 def get_family_violations_demographics(request, type):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
+    today = date(2025, 2, 5)
+    
+    # Subquery: Get family_ids with more than 2 cases today
+    suspicious_families = Last24Hour.objects.annotate(
+        day=TruncDate('preauth_initiated_date')
+    ).filter(
+        day=today
+    ).values('family_id', 'day').annotate(
+        count=Count('id')
+    ).filter(
+        count__gt=2
+    ).values('family_id')
+    
+    # Base query for demographics
     base_query = Last24Hour.objects.filter(
-        Q(hospital_type='P') &
-        Q(family_id__in=Subquery(
-            Last24Hour.objects
-            .annotate(day=TruncDate('preauth_initiated_date'))
-            .values('family_id', 'day')
-            .annotate(count=Count('id'))
-            .filter(count__gt=2)
-            .values('family_id')
-        ))
+        hospital_type='P',
+        family_id__in=Subquery(suspicious_families),
+        preauth_initiated_date__date=today
     )
     
     if districts:
         base_query = base_query.filter(district_name__in=districts)
     
     if type == 'age':
-        # Age distribution logic
         age_groups = Case(
             When(age_years__lt=20, then=Value('≤20')),
             When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
@@ -845,7 +872,6 @@ def get_family_violations_demographics(request, type):
         }
         
     elif type == 'gender':
-        # Gender distribution logic
         gender_data = base_query.values('gender') \
             .annotate(count=Count('id')).order_by('gender')
         
@@ -875,7 +901,7 @@ def get_geo_anomalies(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
 
@@ -930,7 +956,7 @@ def get_geo_anomalies_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
@@ -974,7 +1000,7 @@ def get_geo_violations_by_state(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = timezone.now().date()
+    today = date(2025, 2, 5)
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
@@ -1050,141 +1076,124 @@ def get_geo_violations_demographics(request, type):
     
     return JsonResponse(data)
 
-def get_ophthalmology_cases(request):
-    # 0. District filtering
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
+from datetime import date
+# Module-level cache to avoid repeated I/O
+df_cache = None
+capacity_map = None
 
-    # 1. Date references
-    today = timezone.now().date()
+def load_dataframes():
+    global df_cache, capacity_map
+    if df_cache is None:
+        # Load SuspiciousHospital for capacities
+        df_hosp = pd.read_excel('data/Suspicious_Hospital_List.xlsx')
+        df_hosp.columns = df_hosp.columns.str.strip()
+        capacity_map = (
+            df_hosp.set_index('Hospital Id')['Number of Surgeons']
+                  .fillna(0).astype(int)
+                  .mul(30)
+                  .to_dict()
+        )
+
+        # Load Last24Hour dump
+        df_last = pd.read_excel(
+            'data/Combined_Last24Hours.xlsx',
+            sheet_name='Dump'
+        )
+        df_last.columns = df_last.columns.str.strip()
+        # Rename and parse datetime
+        df_last.rename(columns={
+            'Hospital Type': 'hospital_type',
+            'Hospital Code': 'hospital_id',
+            'Procedure Code': 'procedure_code',
+            'District Name': 'district_name',
+            'Age(Years)': 'age_years',
+            'Patient Name': 'patient_name',
+            'Registration Id': 'registration_id',
+            'Case Id': 'case_id',
+            'Member Id': 'member_id',
+            'Hospital Name': 'hospital_name',
+            'Preauth Initiated Date': 'preauth_date_str',
+            'Preauth Initiated Time': 'preauth_time_str'
+        }, inplace=True)
+        df_last['hospital_id'] = df_last['hospital_id'].astype(str).str.upper().str.strip()
+        df_last['preauth_initiated_datetime'] = pd.to_datetime(
+            df_last['preauth_date_str'].astype(str) + ' ' + df_last['preauth_time_str'].astype(str),
+            errors='coerce'
+        )
+        df_last['preauth_initiated_date'] = df_last['preauth_initiated_datetime'].dt.date
+        df_last['preauth_hour'] = df_last['preauth_initiated_datetime'].dt.hour
+        df_cache = df_last
+    return df_cache, capacity_map
+
+
+def get_ophthalmology_cases(request):
+    # 0. District filter
+    districts = request.GET.get('district', '')
+    districts = [d.strip() for d in districts.split(',')] if districts else []
+
+    # Reference dates
+    today = date(2025, 2, 5)
     yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
 
-    # 2. Build hospital capacity map: OT_count * surgeon_count * 30
-    hosp_info = SuspiciousHospital.objects.values(
-        'hospital_id', 'number_of_ot', 'number_of_surgeons'
-    )
-    capacity_map = {
-        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
-        for h in hosp_info
-    }
+    # Load data
+    df, cap_map = load_dataframes()
 
-    # 3. Base queryset: private hospitals, cataract code SE020A
-    base_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        procedure_code__contains='SE'
-    )
-    if districts:
-        base_qs = base_qs.filter(district_name__in=districts)
-
-    # 4. Age < 40 segment
-    age_qs = base_qs.filter(age_years__lt=40)
-
-    # 5. Preauth‑time violations (outside 08:00–17:59:59)
-    preauth_qs = base_qs.exclude(
-        Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
-    )
-
-    # Helper: count cases per hospital for a given date
-    def counts_by_hospital_for_date(day):
-        qs = base_qs.filter(
-            Q(admission_date__date=day) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=day)
+    # Helper: base period mask
+    def period_mask(start_date, end_date):
+        m = (
+            (df['hospital_type'] == 'P') &
+            df['procedure_code'].str.contains('SE', na=False) &
+            (df['preauth_initiated_date'] >= start_date) &
+            (df['preauth_initiated_date'] <= end_date)
         )
-        return qs.values('hospital_id').annotate(case_count=Count('id'))
+        if districts:
+            m &= df['district_name'].isin(districts)
+        return m
 
-    # 6. OT violations today
-    today_counts = counts_by_hospital_for_date(today)
-    ot_violations_today = [
-        {'hospital_id': rec['hospital_id'],
-         'case_count': rec['case_count'],
-         'capacity': capacity_map.get(rec['hospital_id'], 0)}
-        for rec in today_counts
-        if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0)
-    ]
-    ot_total = len(ot_violations_today)
+    # Masks for each period
+    mask_today = period_mask(today, today)
+    mask_yest = period_mask(yesterday, yesterday)
+    mask_30 = period_mask(thirty_days_ago, today)
 
-    # 7. OT violations yesterday
-    yest_counts = counts_by_hospital_for_date(yesterday)
-    ot_yesterday = sum(
-        1 for rec in yest_counts
-        if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0)
-    )
+    df_today = df.loc[mask_today]
 
-    # 8. OT violations in last 30 days (distinct hospital×day)
-    overflow_days = set()
-    for n in range(30):
-        day = today - timedelta(days=n)
-        for rec in counts_by_hospital_for_date(day):
-            if rec['case_count'] > capacity_map.get(rec['hospital_id'], 0):
-                overflow_days.add((rec['hospital_id'], day))
-    ot_last_30 = len(overflow_days)
+    # 1. Age < 40 counts
+    def count_age(mask):
+        return int(df.loc[mask & (df['age_years'] < 40)].shape[0])
+    age_total = count_age(mask_today)
+    age_yesterday = count_age(mask_yest)
+    age_last_30 = count_age(mask_30)
 
-    # 9. Prepare top-5 detail list for today
-    #    (also fetch hospital names)
-    hosp_names = dict(
-        Last24Hour.objects
-        .filter(hospital_id__in=[v['hospital_id'] for v in ot_violations_today])
-        .values_list('hospital_id', 'hospital_name')
-        .distinct()
-    )
-    ot_details = []
-    for rec in sorted(ot_violations_today, key=lambda x: x['case_count'], reverse=True)[:5]:
-        hid = rec['hospital_id']
-        ot_details.append({
-            'hospital_id': hid,
-            'hospital_name': hosp_names.get(hid, f"Hospital {hid}"),
-            'cases': rec['case_count'],
-            'capacity': rec['capacity']
-        })
+    # 2. Preauth-time violations (hour <8 or >=18)
+    def count_preauth(mask):
+        vp = df.loc[mask]
+        violations = vp[(vp['preauth_hour'] < 8) | (vp['preauth_hour'] >= 18)]
+        return int(violations.shape[0])
+    preauth_total = count_preauth(mask_today)
+    preauth_yesterday = count_preauth(mask_yest)
+    preauth_last_30 = count_preauth(mask_30)
 
-    # 10. Age <40 totals
-    def date_count(qs, day):
-        return qs.filter(
-            Q(admission_date__date=day) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=day)
-        ).count()
+    def compute_ot_exact(df_period):
+        ot_total = 0
+        # for each hospital, in the same order and logic as your original
+        for hospital_id, cap in cap_map.items():
+            # get only this hospital’s cases in the period, sorted by time
+            sub = df_period.loc[
+                df_period['hospital_id'] == hospital_id
+            ].sort_values('preauth_initiated_datetime')
+            total = len(sub)
+            if total > cap:
+                # “flag” everything beyond the cap
+                ot_total += (total - cap)
+        return ot_total
+    ot_total      = compute_ot_exact(df.loc[mask_today])
+    ot_yesterday  = compute_ot_exact(df.loc[mask_yest])
+    ot_last_30    = compute_ot_exact(df.loc[mask_30])
 
-    age_total = age_qs.count()
-    age_yesterday = date_count(age_qs, yesterday)
-    age_last_30 = age_qs.filter(
-        Q(admission_date__date__gte=thirty_days_ago, admission_date__date__lte=today) |
-        Q(admission_date__isnull=True,
-          preauth_initiated_date__date__gte=thirty_days_ago,
-          preauth_initiated_date__date__lte=today)
-    ).count()
-
-    # 11. Preauth‑time totals
-    preauth_total = preauth_qs.count()
-    preauth_yesterday = date_count(preauth_qs, yesterday)
-    preauth_last_30 = preauth_qs.filter(
-        Q(admission_date__date__gte=thirty_days_ago, admission_date__date__lte=today) |
-        Q(admission_date__isnull=True,
-          preauth_initiated_date__date__gte=thirty_days_ago,
-          preauth_initiated_date__date__lte=today)
-    ).count()
-
-    # 12. Calculate true unique total
-    today = timezone.now().date()
-    hospital_counts = base_qs.filter(
-        Q(admission_date__date=today) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-    ).values('hospital_id').annotate(case_count=Count('id'))
-    
-    violating_hospitals = [
-        h['hospital_id'] for h in hospital_counts 
-        if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-    ]
-    
-    unique_violations = base_qs.filter(
-        Q(age_years__lt=40) |
-        Q(hospital_id__in=violating_hospitals) |
-        ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
-    ).count()
-
-    # 13. Build Response
+    # Assemble JSON
     data = {
-        'total': unique_violations,
+        'total': ot_total + age_total + preauth_total,
         'age_under_40': {
             'total': age_total,
             'yesterday': age_yesterday,
@@ -1194,254 +1203,514 @@ def get_ophthalmology_cases(request):
             'total': ot_total,
             'yesterday': ot_yesterday,
             'last_30_days': ot_last_30,
-            'violations': ot_details
         },
         'preauth_time': {
             'total': preauth_total,
             'yesterday': preauth_yesterday,
-            'last_30_days': preauth_last_30,
-            'avg_violation_hours': None
+            'last_30_days': preauth_last_30
         }
     }
-
     return JsonResponse(data)
 
 def get_ophthalmology_details(request):
+    # 1. Params
     violation_type = request.GET.get('type', 'all')
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
-    
-    # Get hospital capacity data
-    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
-    capacity_map = {
-        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
-        for h in hosp_info
-    }
 
-    base_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        procedure_code__contains='SE'
+    # 2. Dates
+    today = date(2025, 2, 5)
+
+    # 3. Load data
+    df, cap_map = load_dataframes()
+
+    # 4. Base mask for today's ophthalmology cases
+    mask_base = (
+        (df['hospital_type'] == 'P') &
+        df['procedure_code'].str.contains('SE', na=False) &
+        (df['preauth_initiated_date'] == today)
     )
-    
     if district_param:
-        districts = district_param.split(',')
-        base_qs = base_qs.filter(district_name__in=districts)
+        districts = [d.strip() for d in district_param.split(',')]
+        mask_base &= df['district_name'].isin(districts)
+    df_base = df.loc[mask_base]
 
-    # Violation filters
+    # 5. Compute flagged OT indices
+    ot_indices = []
+    for hosp_id, cap in cap_map.items():
+        sub = df_base.loc[df_base['hospital_id'] == hosp_id]
+        if len(sub) > cap:
+            sorted_sub = sub.sort_values('preauth_initiated_datetime')
+            ot_indices.extend(sorted_sub.iloc[cap:].index.tolist())
+    ot_set = set(ot_indices)
+
+    # 6. Build violation mask
     if violation_type == 'age':
-        cases = base_qs.filter(age_years__lt=40)
-    elif violation_type == 'ot':
-        # Get today's OT violations
-        today = timezone.now().date()
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        cases = base_qs.filter(hospital_id__in=violating_hospitals)
+        mask = df_base['age_years'] < 40
     elif violation_type == 'preauth':
-        cases = base_qs.exclude(
-            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
-        )
-    else:  # All
-        today = timezone.now().date()
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        
-        cases = base_qs.filter(
-            Q(age_years__lt=40) |
-            Q(hospital_id__in=violating_hospitals) |
-            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+        mask = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
+    elif violation_type == 'ot':
+        mask = df_base.index.isin(ot_set)
+    else:
+        mask = (
+            (df_base['age_years'] < 40) |
+            df_base.index.isin(ot_set) |
+            (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
         )
 
-    paginator = Paginator(cases, page_size)
-    page_obj = paginator.get_page(page)
+    df_cases = df_base.loc[mask].sort_values('preauth_initiated_datetime')
 
+    # 7. Pagination via slicing
+    total_records = len(df_cases)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_df = df_cases.iloc[start:end]
+    total_pages = (total_records + page_size - 1) // page_size
+
+    # 8. Build response rows
     data = []
-    for idx, case in enumerate(page_obj.object_list, 1):
-        row = {
-            'serial_no': (page_obj.number - 1) * page_size + idx,
-            'claim_id': case.registration_id or case.case_id or 'N/A',
-            'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
-            'district_name': case.district_name or 'N/A',
-            'amount': case.claim_initiated_amount or 0,
-            'age': case.age_years,
-            'preauth_time': case.preauth_initiated_time,
-        }
-        
-        # Determine violations
-        is_ot_violation = case.hospital_id in violating_hospitals if violation_type in ['all', 'ot'] else False
-        is_age_violation = case.age_years < 40 if case.age_years else False
-        is_time_violation = not re.match(r'^(0[8-9]|1[0-7]):', case.preauth_initiated_time) if case.preauth_initiated_time else False
-        
-        if violation_type == 'all':
-            row.update({
-                'age_violation': is_age_violation,
-                'ot_violation': is_ot_violation,
-                'preauth_violation': is_time_violation
-            })
-        else:
-            row[f'{violation_type}_violation'] = True
+    for idx, row in enumerate(page_df.itertuples(), start=1):
+        serial = start + idx
+        data.append({
+            'serial_no': serial,
+            'claim_id': row.registration_id or row.case_id or 'N/A',
+            'patient_name': row.patient_name or f"Patient {row.member_id}",
+            'hospital_name': row.hospital_name or 'N/A',
+            'district_name': row.district_name or 'N/A',
+            'amount': getattr(row, 'claim_initiated_amount', 0) or 0,
+            'age': row.age_years,
+            'preauth_time': row.preauth_initiated_datetime.time() if pd.notnull(row.preauth_initiated_datetime) else None,
+            'age_violation': row.age_years < 40 if violation_type in ('age','all') else None,
+            'preauth_violation': True if violation_type in ('preauth','all') and ((row.preauth_hour<8) or (row.preauth_hour>=18)) else None,
+            'ot_violation': row.Index in ot_set if violation_type in ('ot','all') else None
+        })
 
-        data.append(row)
-
+    # 9. JSON response
     return JsonResponse({
         'data': data,
         'pagination': {
-            'total_records': paginator.count,
-            'total_pages': paginator.num_pages,
-            'current_page': page_obj.number,
-            'has_next': page_obj.has_next(),
-            'has_previous': page_obj.has_previous()
+            'total_records': total_records,
+            'total_pages': total_pages,
+            'current_page': page,
+            'has_next': end < total_records,
+            'has_previous': start > 0
         }
     })
 
 def get_ophthalmology_distribution(request):
+    # Parameters
     violation_type = request.GET.get('type', 'all')
     district_param = request.GET.get('district', '')
-    
-    base_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        procedure_code__contains='SE'
+    districts = [d.strip() for d in district_param.split(',')] if district_param else []
+
+    # Fixed test date
+    today = date(2025, 2, 5)
+
+    # Load data
+    df, cap_map = load_dataframes()
+
+    # Base mask for today’s cataract cases
+    mask = (
+        (df['hospital_type'] == 'P') &
+        df['procedure_code'].str.contains('SE', na=False) &
+        (df['preauth_initiated_date'] == today)
     )
+    if districts:
+        mask &= df['district_name'].isin(districts)
+    df_base = df.loc[mask]
 
-    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
-    capacity_map = {
-        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
-        for h in hosp_info
-    }
+    # Compute flagged OT indices
+    ot_indices = []
+    for hid, cap in cap_map.items():
+        sub = df_base.loc[df_base['hospital_id'] == hid]
+        total = len(sub)
+        if total > cap:
+            sorted_sub = sub.sort_values('preauth_initiated_datetime')
+            ot_indices.extend(sorted_sub.iloc[cap:].index.tolist())
+    ot_set = set(ot_indices)
 
-    base_qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        procedure_code='SE020A'
-    )
-    
-    if district_param:
-        districts = district_param.split(',')
-        base_qs = base_qs.filter(district_name__in=districts)
-
-    # Similar violation filtering logic as get_ophthalmology_details
+    # Build violation mask
     if violation_type == 'age':
-        cases = base_qs.filter(age_years__lt=40)
+        mask_v = df_base['age_years'] < 40
     elif violation_type == 'ot':
-        # Get today's OT violations
-        today = timezone.now().date()
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        cases = base_qs.filter(hospital_id__in=violating_hospitals)
+        mask_v = df_base.index.isin(ot_set)
     elif violation_type == 'preauth':
-        cases = base_qs.exclude(
-            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
-        )
-    else:  # All
-        today = timezone.now().date()
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        
-        cases = base_qs.filter(
-            Q(age_years__lt=40) |
-            Q(hospital_id__in=violating_hospitals) |
-            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+        mask_v = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
+    else:
+        mask_v = (
+            (df_base['age_years'] < 40) |
+            df_base.index.isin(ot_set) |
+            (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
         )
 
-    district_data = base_qs.values('district_name').annotate(
-        count=Count('id')
-    ).order_by('-count')
+    df_filtered = df_base.loc[mask_v]
+
+    # Aggregate by district
+    dist_series = df_filtered['district_name'].fillna('Unknown')
+    if dist_series.dtype != object:
+        dist_series = dist_series.astype(str)
+    counts = dist_series.value_counts()
+
+    districts_out = counts.index.tolist()
+    counts_out = counts.values.tolist()
 
     return JsonResponse({
-        'districts': [d['district_name'] or 'Unknown' for d in district_data],
-        'counts': [d['count'] for d in district_data]
+        'districts': districts_out,
+        'counts': counts_out
     })
 
+# def get_ophthalmology_cases(request):
+#     # 0. District filtering
+#     district_param = request.GET.get('district', '')
+#     districts = district_param.split(',') if district_param else []
+
+#     # 1. Date references (using preauth_initiated_date)
+#     today = date(2025, 2, 5)
+#     yesterday = today - timedelta(days=1)
+#     thirty_days_ago = today - timedelta(days=30)
+
+#     # 2. Build hospital capacity map
+#     hosp_info = SuspiciousHospital.objects.values(
+#         'hospital_id', 'number_of_ot', 'number_of_surgeons'
+#     )
+#     capacity_map = {
+#         # capacity = number_of_surgeons * 30 (daily OT capacity)
+#         h['hospital_id']: h['number_of_surgeons'] * 30
+#         for h in hosp_info
+#     }
+
+#     # 3. Base QS
+#     base_qs = Last24Hour.objects.filter(
+#         hospital_type='P',
+#         procedure_code__contains='SE',
+#         preauth_initiated_date__date=today
+#     )
+#     if districts:
+#         base_qs = base_qs.filter(district_name__in=districts)
+
+#     # 4. Age <40
+#     age_qs = base_qs.filter(age_years__lt=40)
+
+#     # 5. Preauth-time
+#     preauth_qs = base_qs.exclude(
+#         preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
+#     )
+
+#     # 7. Yesterday OT violations (count hospitals overloaded yesterday)
+#     def hospital_counts_on(day):
+#         qs = Last24Hour.objects.filter(
+#             hospital_type='P',
+#             procedure_code__contains='SE',
+#             preauth_initiated_date__date=day
+#         )
+#         if districts:
+#             qs = qs.filter(district_name__in=districts)
+#         return qs.values('hospital_id').annotate(case_count=Count('id'))
+    
+#     # 6. OT violations (patient-level beyond capacity)
+#     ot_flagged_cases = []
+#     for hospital_id, cap in capacity_map.items():
+#         qs_h = base_qs.filter(hospital_id=hospital_id).order_by('preauth_initiated_time')
+#         total_cases = qs_h.count()
+#         if total_cases > cap:
+#             # flag cases beyond capacity
+#             flagged = list(qs_h[cap:])
+#             ot_flagged_cases.extend(flagged)
+#     ot_total = len(ot_flagged_cases)
+
+#     yest_counts = hospital_counts_on(yesterday)
+#     ot_yesterday = sum(
+#         max(0, rec['case_count'] - capacity_map.get(rec['hospital_id'], 0))
+#         for rec in yest_counts
+#     )
+
+#     # 8. OT last 30 days (distinct hospital×day)
+#     ot_last_30 = 0
+#     for n in range(30):
+#         day = today - timedelta(days=n)
+#         day_qs = Last24Hour.objects.filter(
+#             hospital_type='P',
+#             procedure_code__contains='SE',
+#             preauth_initiated_date__date=day
+#         )
+#         if districts:
+#             day_qs = day_qs.filter(district_name__in=districts)
+
+#         for hospital_id, cap in capacity_map.items():
+#             qs_h = day_qs.filter(hospital_id=hospital_id).order_by('preauth_initiated_time')
+#             total_cases = qs_h.count()
+#             if total_cases > cap:
+#                 ot_last_30 += (total_cases - cap)
+
+#     # 9. Prepare top-5 flagged patient details
+#     ot_details = []
+#     for idx, case in enumerate(ot_flagged_cases[:5], start=1):
+#         ot_details.append({
+#             'serial_no': idx,
+#             'claim_id': case.registration_id or case.case_id or 'N/A',
+#             'patient_name': case.patient_name or f"Patient {case.member_id}",
+#             'hospital_name': case.hospital_name or 'N/A',
+#             'district_name': case.district_name or 'N/A',
+#             'preauth_time': case.preauth_initiated_time,
+#         })
+
+#     # 10. Age totals
+#     age_total = age_qs.count()
+#     age_yesterday = age_qs.filter(preauth_initiated_date__date=yesterday).count()
+#     age_last_30 = age_qs.filter(
+#         preauth_initiated_date__date__gte=thirty_days_ago,
+#         preauth_initiated_date__date__lte=today
+#     ).count()
+
+#     # 11. Preauth totals
+#     preauth_total = preauth_qs.count()
+#     preauth_yesterday = preauth_qs.filter(preauth_initiated_date__date=yesterday).count()
+#     preauth_last_30 = preauth_qs.filter(
+#         preauth_initiated_date__date__gte=thirty_days_ago,
+#         preauth_initiated_date__date__lte=today
+#     ).count()
+
+#     # 12. Total violations sum
+#     total_opth_violations = ot_total + age_total + preauth_total
+
+#     # 13. Build response
+#     data = {
+#         'total': total_opth_violations,
+#         'age_under_40': {
+#             'total': age_total,
+#             'yesterday': age_yesterday,
+#             'last_30_days': age_last_30
+#         },
+#         'ot_cases': {
+#             'total': ot_total,
+#             'yesterday': ot_yesterday,
+#             'last_30_days': ot_last_30,
+#             'violations': ot_details
+#         },
+#         'preauth_time': {
+#             'total': preauth_total,
+#             'yesterday': preauth_yesterday,
+#             'last_30_days': preauth_last_30,
+#             'avg_violation_hours': None
+#         }
+#     }
+
+#     return JsonResponse(data)
+
+# def get_ophthalmology_details(request):
+#     violation_type = request.GET.get('type', 'all')
+#     district_param = request.GET.get('district', '')
+#     page          = int(request.GET.get('page', 1))
+#     page_size     = int(request.GET.get('page_size', 50))
+
+#     # 0) Fixed test date (you can swap back to timezone.now().date() in prod)
+#     today = date(2025, 2, 5)
+
+#     # 1) Capacity map = number_of_surgeons * 30
+#     cap_map = {
+#         h['hospital_id']: h['number_of_surgeons'] * 30
+#         for h in SuspiciousHospital.objects.values(
+#             'hospital_id', 'number_of_surgeons'
+#         )
+#     }
+
+#     # 2) Base QS (only today’s preauth, only SE-codes, only private)
+#     base_qs = Last24Hour.objects.filter(
+#         hospital_type='P',
+#         procedure_code__contains='SE',
+#         preauth_initiated_date__date=today
+#     )
+#     if district_param:
+#         districts = district_param.split(',')
+#         base_qs   = base_qs.filter(district_name__in=districts)
+
+#     # 3) Precompute flagged OT patient IDs
+#     flagged_ot_ids = []
+#     for hid, cap in cap_map.items():
+#         qs_h = base_qs.filter(hospital_id=hid).order_by('preauth_initiated_time')
+#         total = qs_h.count()
+#         if total > cap:
+#             # all IDs beyond the first `cap`
+#             flagged_ot_ids += list(qs_h.values_list('id', flat=True)[cap:])
+#     flagged_ot_ids = set(flagged_ot_ids)
+
+#     # 4) Build the “cases” queryset / list depending on violation_type
+#     if violation_type == 'age':
+#         cases_qs = base_qs.filter(age_years__lt=40)
+
+#     elif violation_type == 'preauth':
+#         # outside 08:00–17:59:59
+#         cases_qs = base_qs.exclude(
+#             preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
+#         )
+
+#     elif violation_type == 'ot':
+#         # only the flagged OT patients
+#         cases_qs = base_qs.filter(id__in=flagged_ot_ids)
+
+#     else:  # "all"
+#         cases_qs = base_qs.filter(
+#             Q(age_years__lt=40) |
+#             Q(id__in=flagged_ot_ids)   |
+#             ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+#         )
+
+#     # 5) Paginate
+#     paginator = Paginator(cases_qs, page_size)
+#     pg = paginator.get_page(page)
+
+#     # 6) Build response rows
+#     data = []
+#     for idx, case in enumerate(pg.object_list, start=1):
+#         row = {
+#             'serial_no':    (pg.number - 1)*page_size + idx,
+#             'claim_id':     case.registration_id or case.case_id or 'N/A',
+#             'patient_name': case.patient_name or f"Patient {case.member_id}",
+#             'hospital_name': case.hospital_name or 'N/A',
+#             'district_name': case.district_name or 'N/A',
+#             'amount':        case.claim_initiated_amount or 0,
+#             'age':           case.age_years,
+#             'preauth_time':  case.preauth_initiated_time,
+#         }
+
+#         # violation flags
+#         if violation_type in ('age', 'all'):
+#             row['age_violation'] = bool(case.age_years and case.age_years < 40)
+#         if violation_type in ('preauth', 'all'):
+#             row['preauth_violation'] = not re.match(
+#                 r'^(0[8-9]|1[0-7]):', case.preauth_initiated_time or ''
+#             )
+#         if violation_type in ('ot', 'all'):
+#             row['ot_violation'] = case.id in flagged_ot_ids
+
+#         data.append(row)
+
+#     # 7) Return
+#     return JsonResponse({
+#         'data': data,
+#         'pagination': {
+#             'total_records': paginator.count,
+#             'total_pages':   paginator.num_pages,
+#             'current_page':  pg.number,
+#             'has_next':      pg.has_next(),
+#             'has_previous':  pg.has_previous()
+#         }
+#     })
+
+# def get_ophthalmology_distribution(request):
+#     violation_type = request.GET.get('type', 'all')
+#     district_param = request.GET.get('district', '')
+#     districts     = district_param.split(',') if district_param else []
+
+#     # Fixed test date (use timezone.now().date() in production)
+#     today = date(2025, 2, 5)
+
+#     # 1) Base QS: Only today’s cataract (SE) cases
+#     qs = Last24Hour.objects.filter(
+#         hospital_type='P',
+#         procedure_code__contains='SE',
+#         preauth_initiated_date__date=today
+#     )
+#     if districts:
+#         qs = qs.filter(district_name__in=districts)
+
+#     # 2) Build capacity map: number_of_surgeons * 30
+#     cap_map = {
+#         h['hospital_id']: h['number_of_surgeons'] * 30
+#         for h in SuspiciousHospital.objects.values('hospital_id', 'number_of_surgeons')
+#     }
+
+#     # 3) Compute flagged OT‐case IDs (patient‐level) exactly as in get_ophthalmology_cases
+#     flagged_ot_ids = []
+#     for hid, cap in cap_map.items():
+#         day_qs = qs.filter(hospital_id=hid).order_by('preauth_initiated_time')
+#         total = day_qs.count()
+#         if total > cap:
+#             flagged_ot_ids.extend(list(day_qs.values_list('id', flat=True)[cap:]))
+#     flagged_ot_ids = set(flagged_ot_ids)
+
+#     # 4) Apply per‐violation filtering
+#     if violation_type == 'age':
+#         filtered = qs.filter(age_years__lt=40)
+
+#     elif violation_type == 'ot':
+#         # only the flagged OT patient records
+#         filtered = qs.filter(id__in=flagged_ot_ids)
+
+#     elif violation_type == 'preauth':
+#         # preauth time outside 08–17:59
+#         filtered = qs.exclude(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+
+#     else:  # 'all'
+#         filtered = qs.filter(
+#             Q(age_years__lt=40) |
+#             Q(id__in=flagged_ot_ids) |
+#             ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+#         )
+
+#     # 5) Aggregate by district_name at the patient level
+#     dist_qs = (
+#         filtered
+#         .values('district_name')
+#         .annotate(count=Count('id'))
+#         .order_by('-count')
+#     )
+
+#     return JsonResponse({
+#         'districts': [d['district_name'] or 'Unknown' for d in dist_qs],
+#         'counts':    [d['count'] for d in dist_qs]
+#     })
+
 def get_ophthalmology_demographics(request, type):
+    # `type` is the demographic axis: 'age' or 'gender'
+    demo_type      = type
     violation_type = request.GET.get('violation_type', 'all')
     district_param = request.GET.get('district', '')
-    
-    # Get hospital capacity data
-    hosp_info = SuspiciousHospital.objects.values('hospital_id', 'number_of_ot', 'number_of_surgeons')
-    capacity_map = {
-        h['hospital_id']: h['number_of_ot'] * h['number_of_surgeons'] * 30
-        for h in hosp_info
-    }
+    districts      = district_param.split(',') if district_param else []
 
-    base_qs = Last24Hour.objects.filter(
+    # 1) fix date
+    today = date(2025, 2, 5)
+
+    # 2) base SE cases on today’s preauth date
+    qs = Last24Hour.objects.filter(
         hospital_type='P',
-        procedure_code='SE020A'
+        procedure_code__contains='SE',
+        preauth_initiated_date__date=today
     )
-    
-    if district_param:
-        districts = district_param.split(',')
-        base_qs = base_qs.filter(district_name__in=districts)
+    if districts:
+        qs = qs.filter(district_name__in=districts)
 
-    today = timezone.now().date()
+    # 3) build OT capacity map & flagged IDs
+    cap_map = {
+        h['hospital_id']: h['number_of_surgeons'] * 30
+        for h in SuspiciousHospital.objects.values('hospital_id', 'number_of_surgeons')
+    }
+    flagged_ot = []
+    for hid, cap in cap_map.items():
+        day_qs = qs.filter(hospital_id=hid).order_by('preauth_initiated_time')
+        total  = day_qs.count()
+        if total > cap:
+            flagged_ot += list(day_qs.values_list('id', flat=True)[cap:])
+    flagged_ot = set(flagged_ot)
 
-    # Violation filters
+    # 4) apply the same violation_type filter
     if violation_type == 'age':
-        base_qs = base_qs.filter(age_years__lt=40)
+        qs = qs.filter(age_years__lt=40)
     elif violation_type == 'ot':
-        # Get today's OT violations using capacity map
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        base_qs = base_qs.filter(hospital_id__in=violating_hospitals)
+        qs = qs.filter(id__in=flagged_ot)
     elif violation_type == 'preauth':
-        base_qs = base_qs.exclude(
-            preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$'
-        )
-    else:  # All violations
-        # Get OT violations
-        hospital_counts = base_qs.filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
-        ).values('hospital_id').annotate(case_count=Count('id'))
-        
-        violating_hospitals = [
-            h['hospital_id'] for h in hospital_counts 
-            if h['case_count'] > capacity_map.get(h['hospital_id'], 0)
-        ]
-        
-        # Combine all violation types
-        base_qs = base_qs.filter(
+        qs = qs.exclude(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+    else:  # all
+        qs = qs.filter(
             Q(age_years__lt=40) |
-            Q(hospital_id__in=violating_hospitals) |
-            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):[0-5][0-9]:[0-5][0-9]$')
+            Q(id__in=flagged_ot)    |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
         )
 
-    if type == 'age':
-        age_groups = Case(
+    # 5) now do the demographic grouping on that filtered qs
+    if demo_type == 'age':
+        bucket = Case(
             When(age_years__lt=20, then=Value('≤20')),
             When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
             When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
@@ -1451,40 +1720,35 @@ def get_ophthalmology_demographics(request, type):
             default=Value('Unknown'),
             output_field=CharField()
         )
-        
-        age_data = base_qs.annotate(age_group=age_groups).values('age_group') \
-            .annotate(count=Count('id')).order_by('age_group')
-        
-        categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
-        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
-        
-        age_dict = {item['age_group']: item['count'] for item in age_data}
-        
+        data_qs = (
+            qs.annotate(age_group=bucket)
+              .values('age_group')
+              .annotate(count=Count('id'))
+              .order_by('age_group')
+        )
+        labels = ['≤20','21-30','31-40','41-50','51-60','60+','Unknown']
+        colors = ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF','#FF9F40','#C9CBCF']
+        cnt_map = {d['age_group']: d['count'] for d in data_qs}
         return JsonResponse({
-            'labels': categories,
-            'data': [age_dict.get(cat, 0) for cat in categories],
+            'labels': labels,
+            'data':   [cnt_map.get(cat,0) for cat in labels],
             'colors': colors
         })
-        
-    elif type == 'gender':
-        gender_data = base_qs.values('gender') \
-            .annotate(count=Count('id')).order_by('gender')
-        
-        categories = ['Male', 'Female', 'Other', 'Unknown']
-        colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
-        
-        gender_map = {
-            'M': 'Male',
-            'F': 'Female',
-            'O': 'Other'
-        }
-        
-        formatted = {gender_map.get(g['gender'], 'Unknown'): g['count'] for g in gender_data}
-        return JsonResponse({
-            'labels': categories,
-            'data': [formatted.get(cat, 0) for cat in categories],
-            'colors': colors
-        })
+
+    # gender:
+    gender_map = {'M':'Male','F':'Female','O':'Other'}
+    data_qs    = qs.values('gender').annotate(count=Count('id')).order_by('gender')
+    labels     = ['Male','Female','Other','Unknown']
+    colors     = ['#36A2EB','#FF6384','#4BC0C0','#C9CBCF']
+    cnt_map    = {
+        gender_map.get(item['gender'],'Unknown'): item['count']
+        for item in data_qs
+    }
+    return JsonResponse({
+        'labels': labels,
+        'data':   [cnt_map.get(cat,0) for cat in labels],
+        'colors': colors
+    })
 
 def get_age_distribution(request):
     district_param = request.GET.get('district', '')
@@ -1705,7 +1969,7 @@ def download_flagged_claims_report(request):
     return response
 
 @require_http_methods(["GET"])
-def download_high_value_claims(request):
+def download_high_value_claims_excel(request):
     # 1) read district filter
     district_param = request.GET.get('district', '')
     districts     = district_param.split(',') if district_param else []
@@ -1780,16 +2044,6 @@ def download_high_value_claims(request):
     )
     resp['Content-Disposition'] = 'attachment; filename="high_value_claims_excel_report.xlsx"'
     return resp
-
-import datetime
-from django.template.loader import render_to_string
-from django.http import HttpResponse
-from django.views.decorators.http import require_POST
-from django.views.decorators.csrf import csrf_protect
-from django.db.models import Q
-from weasyprint import HTML
-
-from .models import Last24Hour
 
 @require_POST
 @csrf_protect
@@ -1887,6 +2141,707 @@ def download_high_value_claims_report(request):
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="High_Value_Claims_PDF_Report.pdf"'
     return response
+
+@require_http_methods(["GET"])
+def download_hospital_bed_cases_excel(request):
+    # 1) District filter
+    district_param = request.GET.get('district', '')
+    districts     = district_param.split(',') if district_param else []
+
+    # 2) Today’s date
+    today = date(2025, 2, 5)
+
+    # 3) Build bed_strength lookup
+    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
+    bed_strengths = {b['hospital_id']: b['bed_strength'] for b in beds}
+
+    # 4) Query today's admissions + last_violation_date
+    qs = (
+        Last24Hour.objects
+        .filter(
+            Q(admission_date__date=today) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        )
+        .values('hospital_id','hospital_name','district_name','state_name')
+        .annotate(
+            admissions=Count('id'),
+            last_violation_date=Max('admission_date')
+        )
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 5) Compute “enhanced” where admissions > capacity
+    enhanced = []
+    for v in qs:
+        cap = bed_strengths.get(v['hospital_id'], 0)
+        if v['admissions'] > cap:
+            enhanced.append({
+                'S.No':           len(enhanced) + 1,
+                'Hospital ID':    v['hospital_id'],
+                'Hospital Name':  v['hospital_name'],
+                'District':       v['district_name'],
+                'State':          v['state_name'],
+                'Bed Capacity':   cap,
+                'Admissions':     v['admissions'],
+                'Excess':         v['admissions'] - cap,
+                'Last Violation': v['last_violation_date'].strftime('%Y-%m-%d')
+                                     if v['last_violation_date'] else 'N/A'
+            })
+
+    # 6) Build DataFrame
+    df = pd.DataFrame(enhanced)
+
+    # 7) Write to Excel with yellow fill on “Excess”
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Hospital Bed Cases')
+        ws = writer.sheets['Hospital Bed Cases']
+
+        yellow = PatternFill(start_color='FFFF00',
+                             end_color='FFFF00',
+                             fill_type='solid')
+
+        # find the column index for “Excess” in row 1
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        if 'Excess' in headers:
+            col_idx = headers.index('Excess') + 1
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx):
+                row[0].fill = yellow
+
+    buffer.seek(0)
+    resp = HttpResponse(
+        buffer,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    resp['Content-Disposition'] = 'attachment; filename="hospital_bed_cases.xlsx"'
+    return resp
+
+@require_POST
+@csrf_protect
+def download_hospital_bed_report(request):
+    # 1) Read inputs
+    district_param = request.POST.get('district','')
+    districts = [d for d in district_param.split(',') if d]
+
+    # strip base64
+    hc = request.POST.get('hospital_chart','')
+    hospital_chart_b64 = hc.split('base64,',1)[1] if 'base64,' in hc else ''
+
+    # 2) Build full violations list (no pagination)
+    today = date(2025, 2, 5)
+    beds = {b['hospital_id']: b['bed_strength']
+            for b in HospitalBeds.objects.values('hospital_id','bed_strength')}
+
+    raw = (
+      Last24Hour.objects
+      .filter(
+        Q(admission_date__date=today) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+      )
+      .values('hospital_id','hospital_name','district_name','state_name')
+      .annotate(
+        admissions=Count('id'),
+        last_violation=Max('admission_date')
+      )
+    )
+    if districts:
+      raw = raw.filter(district_name__in=districts)
+
+    rows = []
+    for i,v in enumerate(raw, start=1):
+      cap = beds.get(v['hospital_id'],0)
+      if v['admissions'] > cap:
+        rows.append({
+          'serial_no':      i,
+          'hospital_id':    v['hospital_id'],
+          'hospital_name':  v['hospital_name'],
+          'district':       v['district_name'],
+          'state':          v['state_name'],
+          'bed_capacity':   cap,
+          'admissions':     v['admissions'],
+          'excess':         v['admissions']-cap,
+          'last_violation': (v['last_violation'].date().isoformat()
+                             if v['last_violation'] else 'N/A')
+        })
+
+    # 3) report_districts from those rows
+    report_districts = sorted({r['district'] for r in rows})
+
+    # 4) Render
+    context = {
+      'logo_url':         request.build_absolute_uri('/static/images/pmjaylogo.png'),
+      'title':            'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+      'date':            datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+      'report_districts': report_districts,
+      'table_rows':       rows,
+      'hospital_chart_b64': hospital_chart_b64,
+    }
+    html = render_to_string('hospital_bed_report.html', context)
+    pdf  = HTML(string=html, base_url=request.build_absolute_uri('/')).write_pdf()
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="Hospital_Bed_Claims_PDF_Report.pdf"'
+    return response
+
+@require_http_methods(["GET"])
+def download_family_id_cases_excel(request):
+    # 1) district filter
+    district_param = request.GET.get('district', '')
+    districts     = district_param.split(',') if district_param else []
+
+    # 2) today
+    today = date(2025, 2, 5)
+
+    # 3) build the subquery & base queryset
+    subq = (
+        Last24Hour.objects
+        .annotate(day=TruncDate('preauth_initiated_date'))
+        .values('family_id', 'day')
+        .annotate(count=Count('id'))
+        .filter(count__gt=2)
+        .values('family_id')
+    )
+    qs = (
+        Last24Hour.objects
+        .filter(
+            Q(hospital_type='P'),
+            Q(family_id__in=Subquery(subq)),
+            Q(preauth_initiated_date__date=today)
+        )
+        .order_by('family_id', 'preauth_initiated_date')
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 4) serialize all rows
+    rows = []
+    for idx, case in enumerate(qs, start=1):
+        rows.append({
+            'S.No':          idx,
+            'Family ID':     case.family_id,
+            'Claim ID':      case.registration_id or case.case_id or 'N/A',
+            'Patient Name':  case.patient_name or f"Patient {case.member_id}",
+            'District':      case.district_name or 'N/A',
+            'Hospital Name': case.hospital_name or 'N/A',
+            'Date':          case.preauth_initiated_date.date().isoformat()
+        })
+
+    # 5) build DataFrame
+    df = pd.DataFrame(rows)
+
+    # 6) write to Excel, then conditionally color “Family ID” cells
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Family ID Cases')
+        ws = writer.sheets['Family ID Cases']
+
+        # Only attempt coloring if DataFrame has that column
+        if not df.empty and 'Family ID' in df.columns:
+            # Map each family_id to a consistent random color
+            family_ids = df['Family ID'].unique()
+            color_map  = {}
+            for fid in family_ids:
+                random.seed(str(fid))
+                r, g, b = (random.randint(0,255) for _ in range(3))
+                color_map[fid] = "{:02X}{:02X}{:02X}".format(r, g, b)
+
+            # Find the column index of “Family ID”
+            headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+            if 'Family ID' in headers:
+                col_idx = headers.index('Family ID') + 1
+                yellow_fill = None  # placeholder
+
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                    cell = row[col_idx-1]
+                    fid  = cell.value
+                    if fid in color_map:
+                        fill = PatternFill(
+                            start_color=color_map[fid],
+                            end_color=color_map[fid],
+                            fill_type='solid'
+                        )
+                        cell.fill = fill
+
+    buffer.seek(0)
+    resp = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    resp['Content-Disposition'] = 'attachment; filename="family_id_cases.xlsx"'
+    return resp
+
+@require_POST
+@csrf_protect
+def download_family_id_cases_report(request):
+    # 1) inputs
+    district_param = request.POST.get('district','')
+    districts      = [d for d in district_param.split(',') if d]
+
+    # strip base64 helper
+    def strip_b64(key):
+        val = request.POST.get(key,'')
+        return val.split('base64,',1)[1] if 'base64,' in val else ''
+
+    family_chart_b64 = strip_b64('family_chart')
+    age_b64          = strip_b64('family_age_chart')
+    gender_b64       = strip_b64('family_gender_chart')
+    age_callouts     = request.POST.get('age_callouts','')
+    gender_callouts  = request.POST.get('gender_callouts','')
+
+    # 2) full queryset (no pagination)
+    today = date(2025, 2, 5)
+    # subquery families with >2 claims today
+    freq_families = Last24Hour.objects.annotate(
+        day=TruncDate('preauth_initiated_date')
+    ).values('family_id','day') \
+     .annotate(cnt=Count('id')).filter(cnt__gt=2) \
+     .values('family_id')
+
+    qs = Last24Hour.objects.filter(
+        Q(hospital_type='P'),
+        Q(family_id__in=Subquery(freq_families)),
+        Q(preauth_initiated_date__date=today)
+    ).order_by('family_id','preauth_initiated_date')
+
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    rows = []
+    for idx, c in enumerate(qs, start=1):
+        rows.append({
+            'serial_no':    idx,
+            'family_id':    c.family_id,
+            'claim_id':     c.registration_id or c.case_id or 'N/A',
+            'patient_name': c.patient_name or f"Patient {c.member_id}",
+            'district':     c.district_name or 'N/A',
+            'hospital':     c.hospital_name or 'N/A'
+        })
+
+    # 3) report_districts
+    report_districts = sorted({r['district'] for r in rows if r['district'] != 'N/A'})
+
+    # 4) render template
+    context = {
+        'logo_url':            request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'title':               'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'date':                datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'report_districts':    report_districts,
+        'table_rows':          rows,
+        'family_chart_b64':    family_chart_b64,
+        'age_b64':             age_b64,
+        'gender_b64':          gender_b64,
+        'age_callouts':        age_callouts,
+        'gender_callouts':     gender_callouts,
+    }
+    html_string = render_to_string('family_id_report.html', context)
+
+    # 5) PDF
+    pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
+    resp = HttpResponse(pdf, content_type='application/pdf')
+    resp['Content-Disposition'] = 'attachment; filename="Family_ID_Cases_PDF_Report.pdf"'
+    return resp
+
+@require_http_methods(["GET"])
+def download_geo_anomalies_excel(request):
+    # 1) District filter
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # 2) Today’s date
+    today = date(2025, 2, 5)
+
+    # 3) Query exactly as in get_geo_anomalies_details, but no pagination
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(
+        state_name=F('hospital_state_name')
+    ).filter(
+        Q(admission_date__date=today) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+    ).order_by('state_name','hospital_state_name')
+
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 4) Serialize all rows
+    rows = []
+    for idx, c in enumerate(qs, start=1):
+        rows.append({
+            'S.No':             idx,
+            'Claim ID':         c.registration_id or c.case_id or 'N/A',
+            'Patient Name':     c.patient_name or f"Patient {c.member_id}",
+            'District':         c.district_name or 'N/A',
+            'Hospital Name':    c.hospital_name or 'N/A',
+            'Patient State':    c.state_name or 'N/A',
+            'Hospital State':   c.hospital_state_name or 'N/A',
+        })
+
+    df = pd.DataFrame(rows)
+
+    # 5) Write to Excel, coloring the two state columns per row
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Geo Anomalies')
+        ws = writer.sheets['Geo Anomalies']
+
+        # Locate column indexes
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        try:
+            pat_idx = headers.index('Patient State') + 1
+            hos_idx = headers.index('Hospital State') + 1
+        except ValueError:
+            pat_idx = hos_idx = None
+
+        if pat_idx and hos_idx:
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                # generate a random color per row
+                r, g, b = [random.randint(0,255) for _ in range(3)]
+                hexcol = f"{r:02X}{g:02X}{b:02X}"
+                fill = PatternFill(start_color=hexcol,
+                                   end_color=hexcol,
+                                   fill_type='solid')
+                # apply to both cells in this row
+                row[pat_idx-1].fill = fill
+                row[hos_idx-1].fill = fill
+
+    buffer.seek(0)
+    resp = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    resp['Content-Disposition'] = f'attachment; filename="geographic_anomalies_excel.xlsx"'
+    return resp
+
+@require_POST
+@csrf_protect
+def download_geo_anomalies_pdf_report(request):
+    # 1) Read inputs
+    district_param = request.POST.get('district','')
+    districts      = [d for d in district_param.split(',') if d]
+
+    # helper to strip base64
+    def strip_b64(key):
+        v = request.POST.get(key,'')
+        return v.split('base64,',1)[1] if 'base64,' in v else ''
+
+    geo_b64    = strip_b64('geo_chart')
+    age_b64    = strip_b64('geo_age_chart')
+    gender_b64 = strip_b64('geo_gender_chart')
+    age_c      = request.POST.get('geo_age_callouts','')
+    gen_c      = request.POST.get('geo_gender_callouts','')
+
+    # 2) Fetch full anomalies (no pagination)
+    today = date(2025, 2, 5)
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(state_name=F('hospital_state_name')).filter(
+        Q(admission_date__date=today) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+    qs = qs.order_by('state_name','hospital_state_name')
+
+    # 3) Build rows
+    rows = []
+    for i, c in enumerate(qs, start=1):
+        rows.append({
+            'serial_no':    i,
+            'claim_id':     c.registration_id or c.case_id or 'N/A',
+            'patient_name': c.patient_name or f"Patient {c.member_id}",
+            'hospital_name':c.hospital_name or 'N/A',
+            'district':     c.district_name or 'N/A',
+            'patient_state':c.state_name or 'N/A',
+            'hospital_state':c.hospital_state_name or 'N/A',
+        })
+
+    # 4) District line
+    report_districts = sorted({r['district'] for r in rows if r['district']!='N/A'})
+
+    # 5) Render PDF
+    context = {
+      'logo_url':         request.build_absolute_uri('/static/images/pmjaylogo.png'),
+      'title':            'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+      'date':             datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+      'report_districts': report_districts,
+      'table_rows':       rows,
+      'geo_chart_b64':    geo_b64,
+      'age_chart_b64':    age_b64,
+      'gender_chart_b64': gender_b64,
+      'age_callouts':     age_c,
+      'gender_callouts':  gen_c,
+    }
+    html_string = render_to_string('geo_anomalies_report.html', context)
+    pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
+
+    resp = HttpResponse(pdf, content_type='application/pdf')
+    resp['Content-Disposition'] = 'attachment; filename="Geographic_Anomalies_PDF_Report.pdf"'
+    return resp
+
+@require_http_methods(["GET"])
+def download_ophthalmology_excel(request):
+    """
+    Download Excel for Ophthalmology (Cataract) violations.
+    Supports type filter: all, age, ot, preauth.
+    """
+    violation_type = request.GET.get('type', 'all')
+    district_param = request.GET.get('district', '')
+    districts     = district_param.split(',') if district_param else []
+
+    # 1) today’s date
+    today = date(2025, 2, 5)
+
+    # 2) capacity map = surgeons * 30
+    cap_map = {
+        h['hospital_id']: h['number_of_surgeons'] * 30
+        for h in SuspiciousHospital.objects.values('hospital_id', 'number_of_surgeons')
+    }
+
+    # 3) base QS: today’s cataract cases + district filter
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE',
+        preauth_initiated_date__date=today
+    )
+    if districts:
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # 4) OT-flagged **patient** IDs
+    flagged_ot_ids = []
+    for hid, cap in cap_map.items():
+        qs_h = base_qs.filter(hospital_id=hid).order_by('preauth_initiated_time')
+        total = qs_h.count()
+        if total > cap:
+            # all beyond the first `cap` are flagged
+            flagged_ot_ids.extend(qs_h.values_list('id', flat=True)[cap:])
+    flagged_ot_ids = set(flagged_ot_ids)
+
+    # 5) helper to pick the right QS for each sheet
+    def qs_for(t):
+        if t == 'age':
+            return base_qs.filter(age_years__lt=40)
+        if t == 'ot':
+            return base_qs.filter(id__in=flagged_ot_ids)
+        if t == 'preauth':
+            return base_qs.exclude(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+        # all
+        return base_qs.filter(
+            Q(age_years__lt=40) |
+            Q(id__in=flagged_ot_ids) |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+        )
+
+    # 6) common columns
+    common = [
+        ('S.No',         lambda c,i: i),
+        ('Claim ID',     lambda c,i: c.registration_id or c.case_id or 'N/A'),
+        ('Patient Name', lambda c,i: c.patient_name or f"Patient {c.member_id}"),
+        ('Hospital',     lambda c,i: c.hospital_name or 'N/A'),
+        ('District',     lambda c,i: c.district_name or 'N/A'),
+        ('Amount',       lambda c,i: c.claim_initiated_amount or 0),
+    ]
+
+    sheets = {
+        'all': {
+            'title': 'All cases',
+            'fields': common + [
+                ('Age<40',       lambda c,i: bool(c.age_years and c.age_years < 40)),
+                ('OT Cases',     lambda c,i: c.id in flagged_ot_ids),
+                ('Pre-auth Out', lambda c,i: bool(c.preauth_initiated_time and not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)))
+            ]
+        },
+        'age': {
+            'title': 'Age <40',
+            'fields': common + [
+                ('Age<40', lambda c,i: bool(c.age_years and c.age_years < 40))
+            ]
+        },
+        'ot': {
+            'title': 'OT Cases',
+            'fields': common + [
+                ('OT Cases', lambda c,i: c.id in flagged_ot_ids)
+            ]
+        },
+        'preauth': {
+            'title': 'Pre-auth Time',
+            'fields': common + [
+                ('Pre-auth Out', lambda c,i: bool(c.preauth_initiated_time and not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)))
+            ]
+        }
+    }
+
+    # 7) decide which sheets to emit
+    if violation_type in sheets and violation_type != 'all':
+        keys = [violation_type]
+    else:
+        keys = ['all','age','ot','preauth']
+
+    # 8) build DataFrames
+    dfs = {}
+    for key in keys:
+        rows = []
+        for idx, case in enumerate(qs_for(key), start=1):
+            row = {col: fn(case, idx) for col, fn in sheets[key]['fields']}
+            rows.append(row)
+        dfs[key] = pd.DataFrame(rows)
+
+    # 9) write Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for key in keys:
+            title = sheets[key]['title']
+            df    = dfs[key]
+            df.to_excel(writer, index=False, sheet_name=title)
+            ws = writer.sheets[title]
+
+            # map headers to column idx
+            headers = [c.value for c in ws[1]]
+            idx_map = {h: i+1 for i, h in enumerate(headers)}
+
+            # styling
+            fills = {
+                'age':      PatternFill('solid', fgColor="FFEB3B"),
+                'ot':       PatternFill('solid', fgColor="E91E63"),
+                'preauth':  PatternFill('solid', fgColor="009688"),
+                'all_high': PatternFill('solid', fgColor="FFCDD2")
+            }
+            a_i = idx_map.get('Age<40')
+            o_i = idx_map.get('OT Cases') or idx_map.get('OT Cases')  # exactly matching your header
+            p_i = idx_map.get('Pre-auth Out')
+
+            for row in ws.iter_rows(min_row=2):
+                av = a_i and row[a_i-1].value
+                ov = o_i and row[o_i-1].value
+                pv = p_i and row[p_i-1].value
+
+                # single-type fills
+                if key in ('age','all') and av and a_i:
+                    row[a_i-1].fill = fills['age']
+                if key in ('ot','all') and ov and o_i:
+                    row[o_i-1].fill = fills['ot']
+                if key in ('preauth','all') and pv and p_i:
+                    row[p_i-1].fill = fills['preauth']
+
+                # triple overlap only on "all"
+                if key == 'all' and av and ov and pv:
+                    for cell in row:
+                        cell.fill = fills['all_high']
+
+    output.seek(0)
+    fname = f"ophthalmology_{violation_type}_{today}.xlsx"
+    resp = HttpResponse(
+        output.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+@require_POST
+@csrf_protect
+def download_ophthalmology_pdf_report(request):
+    # — read inputs —
+    violation_type = request.POST.get('violation_type', 'all')
+    district_param = request.POST.get('district', '')
+    districts = [d for d in district_param.split(',') if d]
+
+    # helper to strip base64
+    def strip_b64(key):
+        v = request.POST.get(key, '')
+        return v.split('base64,',1)[1] if 'base64,' in v else ''
+
+    # charts
+    charts = {
+        'combined_chart': strip_b64('combined_chart'),
+        'age_chart':      strip_b64('age_chart'),
+        'ot_chart':       strip_b64('ot_chart'),
+        'preauth_chart':  strip_b64('preauth_chart'),
+    }
+    pies = {}
+    callouts = {}
+    for section in ['all','age','ot','preauth']:
+        pies[f'{section}_age']    = strip_b64(f'{section}_age_chart')
+        pies[f'{section}_gender'] = strip_b64(f'{section}_gender_chart')
+        callouts[f'{section}_age']    = request.POST.get(f'{section}_age_callouts','')
+        callouts[f'{section}_gender'] = request.POST.get(f'{section}_gender_callouts','')
+
+    # — fetch all cases, no pagination —
+    today = date(2025, 2, 5)
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE',
+        preauth_initiated_date__date=today
+    )
+    if districts:
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # compute OT‐flagged IDs
+    cap_map = {
+        h['hospital_id']: h['number_of_surgeons']*30
+        for h in SuspiciousHospital.objects.values('hospital_id','number_of_surgeons')
+    }
+    flagged_ot = set()
+    for hid, cap in cap_map.items():
+        qs_h = base_qs.filter(hospital_id=hid).order_by('preauth_initiated_time')
+        if qs_h.count()>cap:
+            flagged_ot.update(qs_h.values_list('id',flat=True)[cap:])
+
+    # build four lists
+    def section_qs(vtype):
+        if vtype=='age':
+            return base_qs.filter(age_years__lt=40)
+        if vtype=='ot':
+            return base_qs.filter(id__in=flagged_ot)
+        if vtype=='preauth':
+            return base_qs.exclude(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+        # all
+        return base_qs.filter(
+            Q(age_years__lt=40) |
+            Q(id__in=flagged_ot) |
+            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+        )
+
+    rows = {}
+    for sec in ['all','age','ot','preauth']:
+        qs = section_qs(sec).order_by('preauth_initiated_time')
+        rows[sec] = [{
+            'serial_no':    i+1,
+            'claim_id':     c.registration_id or c.case_id or 'N/A',
+            'patient_name': c.patient_name or f"Patient {c.member_id}",
+            'hospital_name':c.hospital_name or 'N/A',
+            'district':     c.district_name or 'N/A',
+            'amount':       c.claim_initiated_amount or 0,
+            'age_lt_40':    bool(c.age_years and c.age_years < 40),
+            'ot_cases':     bool(c.id in flagged_ot),
+            'preauth_time': bool(c.preauth_initiated_time and not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time))
+        } for i,c in enumerate(qs)]
+
+    report_districts = sorted({r['district'] for r in rows['all'] if r['district']!='N/A'})
+
+    # — render HTML →
+    context = {
+      'logo_url':    request.build_absolute_uri('/static/images/pmjaylogo.png'),
+      'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+      'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+      'violation_type': violation_type,
+      'report_districts': report_districts,
+      # table rows
+      **{f'{sec}_rows': rows[sec] for sec in rows},
+      # charts & pies
+      **{f'{k}_b64': v for k,v in charts.items()},
+      **{f'{k}_b64': v for k,v in pies.items()},
+      # callouts
+      **{f'{k}_callouts': v for k,v in callouts.items()},
+    }
+    html_string = render_to_string('ophthalmology_report.html', context)
+    pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
+
+    resp = HttpResponse(pdf, content_type='application/pdf')
+    resp['Content-Disposition'] = 'attachment; filename="Ophthalmology_Cataract_PDF_Report.pdf"'
+    return resp
 
 @login_required(login_url='login')
 def dashboard_view(request):

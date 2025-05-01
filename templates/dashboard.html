@@ -58,6 +58,14 @@
 
             <!-- Content Area -->
             <div class="content">
+                <div class="generated-on">
+                    <h5>
+                      Generated on: 
+                      <span id="generatedOn">
+                        <span class="gen-date"></span><span class="gen-separator">, </span><span class="gen-time"></span>
+                      </span>
+                    </h5>
+                </div>
                 
                 <div class="district-filter">
                     <div class="dropdown-container">
@@ -94,7 +102,8 @@
                     <!-- Column 1 -->
                     <div class="card-column main-column">
                         <!-- Flagged Claims Card -->
-                        <div class="card flagged-claims" data-modal-title="Flagged Claims Details">
+                        <div class="card flagged-claims" 
+                        data-modal-title="Flagged Claims Details">
                             <button id="download-flagged" class="download-btn"  data-download-url="{% url 'download_flagged_claims' %}" data-district="{{ district_param|urlencode }}">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -178,7 +187,10 @@
                         </div>
                         
                         <!-- Hospital Bed Cases Card -->
-                        <div class="card hospital-beds">
+                        <div class="card hospital-beds" 
+                        data-details-url="{% url 'get_hospital_bed_details' %}"
+                        data-download-url="{% url 'download_hospital_bed_cases_excel' %}"
+                        data-district="{{ district_param|urlencode }}">
                             <button class="download-btn">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -206,7 +218,10 @@
                         </div>
                         
                         <!-- Family ID Cases Card -->
-                        <div class="card family-id">
+                        <div class="card family-id" 
+                        data-details-url="{% url 'get_family_id_cases_details' %}"
+                        data-download-url="{% url 'download_family_id_cases_excel' %}"
+                        data-district="{{ district_param|urlencode }}">
                             <button class="download-btn">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -236,7 +251,10 @@
                     <!-- Column 2 -->
                     <div class="card-column secondary-column">
                         <!-- Geographic Anomalies Card -->
-                        <div class="card geo-anomalies">
+                        <div class="card geo-anomalies" 
+                        data-details-url="{% url 'get_geo_anomalies_details' %}"
+                        data-download-url="{% url 'geographic_anomalies_excel' %}"
+                        data-district="{{ district_param|urlencode }}">
                             <button class="download-btn">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -262,7 +280,9 @@
                             </div>
                         </div>
                         
-                        <div class="card ophthalmology">
+                        <div class="card ophthalmology" 
+                        data-download-url="{% url 'download_ophthalmology_excel' %}"
+                        data-district="{{ district_param|urlencode }}">
                             <button class="download-btn">
                                 <i class="fas fa-download"></i>
                                 <span class="btn-text"></span>
@@ -356,8 +376,7 @@
         data-excel-url=""
         data-pdf-url="{% url 'download_flagged_claims_report' %}"
         data-details-url=""
-        data-district="{{ district_param|urlencode }}"
-        >
+        data-district="{{ district_param|urlencode }}">
             <!-- Loader -->
             <div id="pdfLoader" class="pdf-loading-overlay">
                 <div class="pdf-loading-content">
@@ -434,7 +453,11 @@
     <script>
         window.PDF_URLS = {
           flagged:   "{% url 'download_flagged_claims_report' %}",
-          highValue: "{% url 'download_high_value_claims_report' %}"
+          highValue: "{% url 'download_high_value_claims_report' %}",
+          hospitalBeds:  "{% url 'download_hospital_bed_report' %}",
+          familyId:      "{% url 'download_family_id_cases_report' %}",
+          geoAnomalies:  "{% url 'download_geo_anomalies_pdf_report' %}",
+          ophthalmology: "{% url 'download_ophthalmology_pdf_report' %}"
         };
     </script>
     <script src="{% static 'js/dashboard.js' %}"></script>
