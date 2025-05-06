@@ -21,7 +21,16 @@ class Command(BaseCommand):
         # Process new files
         processed = 0
         for filename in os.listdir(NEW_FILES_DIR):
-            if filename.startswith('Last 24 Hours Bihar Reports') and filename.endswith('.xlsx'):
+            # Split filename into base and extension
+            base_name, file_ext = os.path.splitext(filename)
+            file_ext = file_ext.lower()  # Normalize extension to lowercase
+            
+            # Check conditions (either name pattern OR Excel extension)
+            if (
+                base_name.startswith('Last 24 Hours Bihar Reports')  # Name condition
+                or 
+                file_ext in ['.xlsx', '.xls']  # Extension condition
+            ):
                 file_path = os.path.join(NEW_FILES_DIR, filename)
                 try:
                     # Read files

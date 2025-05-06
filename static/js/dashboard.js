@@ -3193,7 +3193,7 @@ $(document).ready(function() {
     }
     
     // Initialize on load
-    $(window).on('load', function() {
+    $(function() {
         $('#modalOverlay').hide().removeClass('show');
         ModalController.init();
     });

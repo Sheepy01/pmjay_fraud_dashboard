@@ -46,4 +46,5 @@ urlpatterns = [
     path('download-family-id-cases-report/', views.download_family_id_cases_report, name='download_family_id_cases_report'),
     path('download-geo-anomalies-pdf-report/', views.download_geo_anomalies_pdf_report, name='download_geo_anomalies_pdf_report'),
     path('download-ophthalmology-pdf-report/', views.download_ophthalmology_pdf_report, name='download_ophthalmology_pdf_report'),
+    path('export-watchlist-heatmap/', views.patient_admitted_in_watchlist_hospitals_heatmap_data, name='export_watchlist_heatmap'),
 ]

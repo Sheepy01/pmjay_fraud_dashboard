@@ -38,7 +38,7 @@ def login_view(request):
         user = authenticate(request, username=request.POST['username'], password=request.POST['password'])
         if user is not None:
             login(request, user)
-            call_command('process_new_files')
+            # call_command('process_new_files')
             return redirect('dashboard')
         else:
             error = "Invalid username or password"
@@ -62,28 +62,39 @@ def get_flagged_claims(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    # Only include private hospitals (type "P")
+    # Get current date in the correct timezone
+    today = date(2025, 2, 5) #timezone.now().date()
+    
+    # Base queryset with today's filter
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    flagged_cases = Last24Hour.objects.filter(
+    flagged_cases_today = Last24Hour.objects.filter(
         hospital_id__in=suspicious_hospitals,
-        hospital_type='P'  # Add this filter
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added today filter
     )
     
     if districts:
-        flagged_cases = flagged_cases.filter(district_name__in=districts)
+        flagged_cases_today = flagged_cases_today.filter(district_name__in=districts)
     
-    now = timezone.now()
-    yesterday = now - timedelta(days=1)
-    thirty_days_ago = now - timedelta(days=30)
+    # Date ranges
+    yesterday = today - timedelta(days=1)
+    thirty_days_ago = today - timedelta(days=30)
+    
+    # Separate queryset for 30-day period
+    flagged_cases_30d = Last24Hour.objects.filter(
+        hospital_id__in=suspicious_hospitals,
+        hospital_type='P',
+        preauth_initiated_date__date__gte=thirty_days_ago
+    )
+    if districts:
+        flagged_cases_30d = flagged_cases_30d.filter(district_name__in=districts)
     
     data = {
-        'total': flagged_cases.count(),
-        'yesterday': flagged_cases.filter(
-            preauth_initiated_date__date=yesterday.date()
+        'total': flagged_cases_today.count(),
+        'yesterday': flagged_cases_today.filter(
+            preauth_initiated_date__date=yesterday
         ).count(),
-        'last_30_days': flagged_cases.filter(
-            preauth_initiated_date__gte=thirty_days_ago
-        ).count()
+        'last_30_days': flagged_cases_30d.count()
     }
     
     return JsonResponse(data)
@@ -93,21 +104,23 @@ def get_flagged_claims_details(request):
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
-
-    # Get suspicious hospitals
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     
-    # Base query
+    # Get current date
+    today = date(2025, 2, 5)
+    
+    # Base query with today's filter
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     flagged_cases = Last24Hour.objects.filter(
         Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P')
+        Q(hospital_type='P') &
+        Q(preauth_initiated_date__date=today)  # Added today filter
     )
     
     if districts:
         flagged_cases = flagged_cases.filter(district_name__in=districts)
     
     # Pagination
-    paginator = Paginator(flagged_cases, page_size)
+    paginator = Paginator(flagged_cases.order_by('preauth_initiated_date'), page_size)
     page_obj = paginator.get_page(page)
     
     data = []
@@ -118,7 +131,7 @@ def get_flagged_claims_details(request):
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
-            'amount': case.claim_initiated_amount or 0,
+            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'reason': 'Suspicious hospital'
         })
     
@@ -138,18 +151,25 @@ def get_flagged_claims_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
+    # Get current date filter
+    today = date(2025, 2, 5)
+    
+    # Base queryset with today's filter
     queryset = Last24Hour.objects.filter(
         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P'
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added today filter
     )
     
     if districts:
         queryset = queryset.filter(district_name__in=districts)
     
+    # Aggregate data by district
     district_data = queryset.values('district_name').annotate(
         count=Count('id')
     ).order_by('-count')
     
+    # Prepare response data
     data = {
         'districts': [item['district_name'] or 'Unknown' for item in district_data],
         'counts': [item['count'] for item in district_data]
@@ -160,62 +180,357 @@ def get_flagged_claims_by_district(request):
 def get_all_flagged_claims(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-
-    # Get suspicious hospitals
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     
-    # Base query
+    # Get current date filter
+    today = date(2025, 2, 5)
+    
+    # Base query with today's filter
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     flagged_cases = Last24Hour.objects.filter(
         Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P')
+        Q(hospital_type='P') &
+        Q(preauth_initiated_date__date=today)  # Added today filter
     )
     
     if districts:
         flagged_cases = flagged_cases.filter(district_name__in=districts)
     
     data = []
-    for idx, case in enumerate(flagged_cases, 1):
+    for idx, case in enumerate(flagged_cases.order_by('preauth_initiated_date'), 1):
         data.append({
             'serial_no': idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
-            'amount': case.claim_initiated_amount or 0,
+            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'reason': 'Suspicious hospital'
         })
     
     return JsonResponse({'data': data})
 
+def get_age_distribution(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    today = date(2025, 2, 5)
+
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added today filter
+    )
+
+    if districts:
+        queryset = queryset.filter(district_name__in=districts)
+
+    # Age groups aggregation
+    age_groups = {
+        '15-29': Count('id', filter=Q(age_years__gte=15, age_years__lte=29)),
+        '30-44': Count('id', filter=Q(age_years__gte=30, age_years__lte=44)),
+        '45-59': Count('id', filter=Q(age_years__gte=45, age_years__lte=59)),
+        '60+': Count('id', filter=Q(age_years__gte=60))
+    }
+
+    age_data = queryset.aggregate(**age_groups)
+
+    return JsonResponse({
+        'labels': list(age_data.keys()),
+        'data': list(age_data.values()),
+        'colors': ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']
+    })
+
+def get_gender_distribution(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    today = date(2025, 2, 5)
+
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added today filter
+    )
+
+    if districts:
+        queryset = queryset.filter(district_name__in=districts)
+
+    # Gender processing
+    gender_data = queryset.values('gender').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    standardized_data = {'Male': 0, 'Female': 0, 'Unknown': 0}
+    gender_mappings = {'M': 'Male', 'MALE': 'Male', 'F': 'Female', 'FEMALE': 'Female'}
+
+    for item in gender_data:
+        gender = str(item['gender']).strip().upper() if item['gender'] else 'Unknown'
+        mapped_gender = gender_mappings.get(gender, 'Unknown')
+        
+        # Only count as Unknown if not a recognized value
+        if mapped_gender == 'Unknown' and gender in ['MALE', 'FEMALE', 'M', 'F']:
+            mapped_gender = 'Male' if gender in ['MALE', 'M'] else 'Female'
+            
+        standardized_data[mapped_gender] += item['count']
+
+    # Prepare response
+    labels, data = [], []
+    for gender in ['Male', 'Female', 'Unknown']:
+        if standardized_data.get(gender, 0) > 0:
+            labels.append(gender)
+            data.append(standardized_data[gender])
+
+    return JsonResponse({
+        'labels': labels,
+        'data': data,
+        'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
+    })
+
+def download_flagged_claims_excel(request):
+    # Get current date filter
+    today = date(2025, 2, 5)
+    
+    # 1. Apply same filters as other endpoints
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # 2. Build queryset with today's filter
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    qs = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        Q(preauth_initiated_date__date=today)  # Added date filter
+    )
+    
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 3. Prepare data with required fields only
+    rows = [{
+        'Claim ID': case.registration_id or case.case_id,
+        'Patient Name': case.patient_name or f"Patient {case.member_id}",
+        'Hospital Name': case.hospital_name,
+        'District': case.district_name,
+        'Amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
+        'Reason': 'Suspicious hospital',
+        'Date': case.preauth_initiated_date.strftime('%Y-%m-%d')
+    } for case in qs.only(
+        'registration_id', 'case_id', 'patient_name', 'member_id',
+        'hospital_name', 'district_name', 'claim_initiated_amount',
+        'preauth_initiated_date'
+    )]
+
+    # 4. Create DataFrame with defined column order
+    columns = ['Claim ID', 'Patient Name', 'Hospital Name', 'District', 
+              'Amount', 'Reason', 'Date']
+    df = pd.DataFrame(rows, columns=columns)
+
+    # 5. Efficient Excel styling
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Flagged Claims')
+        workbook = writer.book
+        worksheet = writer.sheets['Flagged Claims']
+        
+        # Style definitions
+        red_fill = PatternFill(start_color='FF0000', fill_type='solid')
+        white_font = Font(color='FFFFFF')
+        
+        # Apply styling to entire Reason column
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=6, max_col=6):
+            for cell in row:
+                cell.fill = red_fill
+                cell.font = white_font
+                
+        # Format amount column as currency
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=5, max_col=5):
+            for cell in row:
+                cell.number_format = '₹#,##0.00'
+
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="flagged_claims_{today}.xlsx"'
+    return response
+
+@require_http_methods(["GET", "POST"])
+def download_flagged_claims_report(request):
+    # 1) Read parameters & chart images
+    district = request.POST.get('district', '')
+    districts = district.split(',') if district else []
+    today = date(2025, 2, 5)
+
+    # Each value is "data:image/png;base64,XXXXX"
+    def strip_prefix(data_url):
+        return data_url.split('base64,', 1)[1]
+
+    flagged_b64 = strip_prefix(request.POST.get('flagged_chart', ''))
+    age_b64     = strip_prefix(request.POST.get('age_chart', ''))
+    gender_b64  = strip_prefix(request.POST.get('gender_chart', ''))
+    age_callouts    = request.POST.get('age_callouts', '')
+    gender_callouts = request.POST.get('gender_callouts', '')
+
+    # 2) Fetch the FULL flagged-claims data (no pagination)
+    suspicious_ids = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    qs = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_ids) &
+        Q(hospital_type='P') &
+        Q(preauth_initiated_date__date=today)
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    table_rows = []
+    for idx, case in enumerate(qs, start=1):
+        table_rows.append({
+            'serial_no':     idx,
+            'claim_id':      case.registration_id or case.case_id or 'N/A',
+            'patient_name':  case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name or 'N/A',
+            'district_name': case.district_name or 'N/A',
+            'amount':        case.claim_initiated_amount or 0,
+            'reason':        'Suspicious hospital'
+        })
+    report_districts = sorted({
+        row['district_name'] 
+        for row in table_rows 
+        if row['district_name'] and row['district_name'] != 'N/A'
+    })
+
+    # 3) Render HTML via a dedicated template
+    context = {
+        'logo_url':    request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'table_rows':  table_rows,
+        'report_districts': report_districts,
+        'flagged_b64': flagged_b64,
+        'age_b64':     age_b64,
+        'gender_b64':  gender_b64,
+        'age_callouts':    age_callouts,
+        'gender_callouts': gender_callouts,
+    }
+    html_string = render_to_string('flagged_claims_report.html', context)
+
+    # 4) Generate PDF
+    html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+    pdf  = html.write_pdf()
+
+    # 5) Return as attachment
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
+    return response
+
+SHAPEFILE_DISTRICT_MAPPING = {
+    "sheohar": 0,
+    "sitamarhi": 1,
+    "madhubani": 2,
+    "supaul": 3,
+    "araria": 4,
+    "purnia": 5,
+    "katihar": 6,
+    "madhepura": 7,
+    "saharsa": 8,
+    "darbhanga": 9,
+    "muzaffarpur": 10,
+    "gopalganj": 11,
+    "siwan": 12,
+    "saran": 13,
+    "vaishali": 14,
+    "samastipur": 15,
+    "begusarai": 16,
+    "khagaria": 17,
+    "bhagalpur": 18,
+    "banka": 19,
+    "munger": 20,
+    "lakhisarai": 21,
+    "sheikhpura": 22,
+    "nalanda": 23,
+    "patna": 24,
+    "bhojpur": 25,
+    "kaimur": 26,
+    "rohtas": 27,
+    "aurangabad": 28,
+    "gaya": 29,
+    "nawada": 30,
+    "jamui": 31,
+    "jehanabad": 32,
+    "arwal": 33,
+    "east champaran": 34,
+    "purbi champaran": 34,
+    "kishanganj": 35,
+    "buxar": 36,
+    "west champaran": 37,
+}
+
+def patient_admitted_in_watchlist_hospitals_heatmap_data(request):
+    today = date(2025, 2, 5)  # Replace with dynamic date if needed
+    queryset = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P',
+        preauth_initiated_date__date=today
+    )
+    
+    # Aggregate counts by district (same as bar chart)
+    district_counts = (
+        queryset.values('district_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+    
+    # Map to shapefile IDs and normalize district names
+    heatmap_data = []
+    for entry in district_counts:
+        district = entry['district_name'].strip().lower()  # Normalize
+        shapefile_id = SHAPEFILE_DISTRICT_MAPPING.get(district, None)
+        if shapefile_id is not None:
+            heatmap_data.append({
+                "DISTRICT": district.upper(),  # Match shapefile casing
+                "ID": shapefile_id,
+                "Count": entry['count']
+            })
+        else:
+            print(f"Warning: District '{district}' not found in shapefile mapping!")
+    
+    # Export to Excel
+    df = pd.DataFrame(heatmap_data)
+    file_path = "data/Heatmap_data_patient_admitted_in_watchlist_hospitals.xlsx"
+    df.to_excel(file_path, index=False)
+    
+    return HttpResponse("Heatmap data exported successfully!")
+
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
+    today = date(2025, 2, 5)
     
-    # Base queryset - only private hospitals
-    cases = Last24Hour.objects.filter(hospital_type='P')
+    # Base queryset with today's filter
+    cases = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added today filter
+    )
     
-    # Apply district filter if specified
     if districts:
         cases = cases.filter(district_name__in=districts)
-    
-    # Get time thresholds
-    now = timezone.now()
-    yesterday = now - timedelta(days=1)
-    thirty_days_ago = now - timedelta(days=30)
-    
-    # Surgical cases (≥100,000)
+
+    # Time thresholds based on today
+    yesterday = today - timedelta(days=1)
+    thirty_days_ago = today - timedelta(days=30)
+
+    # Surgical cases filter (≥100,000)
     surgical_cases = cases.filter(
-        case_type__iexact='SURGICAL',
-        claim_initiated_amount__gte=100000
+        Q(case_type__iexact='SURGICAL') &
+        Q(claim_initiated_amount__gte=100000)
     )
-    
-    # Medical cases (≥25,000)
+
+    # Medical cases filter (≥25,000)
     medical_cases = cases.filter(
-        case_type__iexact='MEDICAL',
-        claim_initiated_amount__gte=25000
+        Q(case_type__iexact='MEDICAL') &
+        Q(claim_initiated_amount__gte=25000)
     )
-    
-    # Calculate metrics
+
+    # Calculate metrics (now using today-filtered base)
     surgical_total = surgical_cases.aggregate(
         Sum('claim_initiated_amount')
     )['claim_initiated_amount__sum'] or 0
@@ -223,33 +538,28 @@ def get_high_value_claims(request):
     medical_total = medical_cases.aggregate(
         Sum('claim_initiated_amount')
     )['claim_initiated_amount__sum'] or 0
-    
+
     data = {
-        # Main card - show exact count (not sum of amounts)
         'total_count': surgical_cases.count() + medical_cases.count(),
-        
-        # Time period counts
         'yesterday_count': (
-            surgical_cases.filter(preauth_initiated_date__date=yesterday.date()).count() +
-            medical_cases.filter(preauth_initiated_date__date=yesterday.date()).count()
+            surgical_cases.filter(preauth_initiated_date__date=yesterday).count() +
+            medical_cases.filter(preauth_initiated_date__date=yesterday).count()
         ),
         'last_30_days_count': (
-            surgical_cases.filter(preauth_initiated_date__gte=thirty_days_ago).count() +
-            medical_cases.filter(preauth_initiated_date__gte=thirty_days_ago).count()
+            surgical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count() +
+            medical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
         ),
-        
-        # Breakdown
         'surgical': {
             'count': surgical_cases.count(),
             'amount': surgical_total,
-            'yesterday': surgical_cases.filter(preauth_initiated_date__date=yesterday.date()).count(),
-            'last_30_days': surgical_cases.filter(preauth_initiated_date__gte=thirty_days_ago).count()
+            'yesterday': surgical_cases.filter(preauth_initiated_date__date=yesterday).count(),
+            'last_30_days': surgical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
         },
         'medical': {
             'count': medical_cases.count(),
             'amount': medical_total,
-            'yesterday': medical_cases.filter(preauth_initiated_date__date=yesterday.date()).count(),
-            'last_30_days': medical_cases.filter(preauth_initiated_date__gte=thirty_days_ago).count()
+            'yesterday': medical_cases.filter(preauth_initiated_date__date=yesterday).count(),
+            'last_30_days': medical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
         }
     }
     
@@ -259,37 +569,39 @@ def get_high_value_claims_details(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
-    page_size = int(request.GET.get('page_size', 50))  # Default 50 items per page
-    
-    # Base query
-    base_query = Last24Hour.objects.filter(hospital_type='P')
-    
-    # Apply case type filter
+    page_size = int(request.GET.get('page_size', 50))
+    today = date(2025, 2, 5)
+
+    # Base query with today's filter
+    base_query = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added date filter
+    )
+
+    # Case type filters (preserve original logic)
+    case_filters = Q()
     if case_type == 'SURGICAL':
-        base_query = base_query.filter(
-            case_type__iexact='SURGICAL',
-            claim_initiated_amount__gte=100000
-        )
+        case_filters = Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
     elif case_type == 'MEDICAL':
-        base_query = base_query.filter(
-            case_type__iexact='MEDICAL',
-            claim_initiated_amount__gte=25000
-        )
+        case_filters = Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
     else:
-        base_query = base_query.filter(
+        case_filters = (
             Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
             Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
         )
     
+    base_query = base_query.filter(case_filters)
+
+    # District filtering
     if district_param:
         districts = district_param.split(',')
         base_query = base_query.filter(district_name__in=districts)
-    
-    # Create paginator
-    paginator = Paginator(base_query, page_size)
+
+    # Pagination with ordering
+    paginator = Paginator(base_query.order_by('-claim_initiated_amount'), page_size)
     page_obj = paginator.get_page(page)
-    
-    # Serialize data
+
+    # Data serialization
     data = []
     for idx, case in enumerate(page_obj.object_list, 1):
         data.append({
@@ -298,10 +610,10 @@ def get_high_value_claims_details(request):
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
-            'amount': case.claim_initiated_amount or 0,
+            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'case_type': case.case_type.upper() if case.case_type else 'N/A'
         })
-    
+
     return JsonResponse({
         'data': data,
         'pagination': {
@@ -317,33 +629,39 @@ def get_high_value_claims_by_district(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
-    base_query = Last24Hour.objects.filter(hospital_type='P')
-    
-    # Apply value thresholds
+    today = date(2025, 2, 5)
+
+    # Base query with today's filter
+    base_query = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added date filter
+    )
+
+    # Apply value thresholds (original logic preserved)
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
-            case_type__iexact='SURGICAL',
-            claim_initiated_amount__gte=100000
+            Q(case_type__iexact='SURGICAL') &
+            Q(claim_initiated_amount__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
-            case_type__iexact='MEDICAL',
-            claim_initiated_amount__gte=25000
+            Q(case_type__iexact='MEDICAL') &
+            Q(claim_initiated_amount__gte=25000)
         )
     else:  # All
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
             Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
         )
-    
+
     if districts:
         base_query = base_query.filter(district_name__in=districts)
-    
+
+    # Aggregate district data
     district_data = base_query.values('district_name').annotate(
         count=Count('id')
     ).order_by('-count')
-    
+
     return JsonResponse({
         'districts': [d['district_name'] or 'Unknown' for d in district_data],
         'counts': [d['count'] for d in district_data]
@@ -353,30 +671,35 @@ def get_high_value_age_distribution(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
-    base_query = Last24Hour.objects.filter(hospital_type='P')
-    
-    # Apply case type filter
+    today = date(2025, 2, 5)
+
+    # Base query with today's filter
+    base_query = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added date filter
+    )
+
+    # Case type filter (original logic preserved)
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
-            case_type__iexact='SURGICAL',
-            claim_initiated_amount__gte=100000
+            Q(case_type__iexact='SURGICAL') &
+            Q(claim_initiated_amount__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
-            case_type__iexact='MEDICAL',
-            claim_initiated_amount__gte=25000
+            Q(case_type__iexact='MEDICAL') &
+            Q(claim_initiated_amount__gte=25000)
         )
     else:
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
             Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
         )
-    
+
     if districts:
         base_query = base_query.filter(district_name__in=districts)
-    
-    # Define age groups (match existing visualization categories)
+
+    # [Rest of the age grouping logic remains unchanged]
     age_groups = Case(
         When(age_years__lt=20, then=Value('≤20')),
         When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
@@ -387,54 +710,54 @@ def get_high_value_age_distribution(request):
         default=Value('Unknown'),
         output_field=CharField()
     )
-    
+
     age_data = base_query.annotate(age_group=age_groups).values('age_group') \
         .annotate(count=Count('id')).order_by('age_group')
-    
-    # Convert to frontend format with consistent category order
+
     categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
     colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
     
-    # Create a dictionary for easy lookup
     age_dict = {item['age_group']: item['count'] for item in age_data}
     
-    # Fill in missing categories with 0 count
-    formatted_data = {
+    return JsonResponse({
         'labels': categories,
         'data': [age_dict.get(cat, 0) for cat in categories],
         'colors': colors
-    }
-    
-    return JsonResponse(formatted_data)
+    })
 
 def get_high_value_gender_distribution(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
-    base_query = Last24Hour.objects.filter(hospital_type='P')
-    
-    # Apply case type filter (same as age distribution)
+    today = date(2025, 2, 5)
+
+    # Base query with today's filter
+    base_query = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=today  # Added date filter
+    )
+
+    # Case type filter (original logic preserved)
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
-            case_type__iexact='SURGICAL',
-            claim_initiated_amount__gte=100000
+            Q(case_type__iexact='SURGICAL') &
+            Q(claim_initiated_amount__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
-            case_type__iexact='MEDICAL',
-            claim_initiated_amount__gte=25000
+            Q(case_type__iexact='MEDICAL') &
+            Q(claim_initiated_amount__gte=25000)
         )
     else:
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
             Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
         )
-    
+
     if districts:
         base_query = base_query.filter(district_name__in=districts)
-    
-    # Normalize gender values
+
+    # [Rest of the gender grouping logic remains unchanged]
     gender_groups = Case(
         When(gender__iexact='M', then=Value('Male')),
         When(gender__iexact='F', then=Value('Female')),
@@ -442,23 +765,20 @@ def get_high_value_gender_distribution(request):
         default=Value('Unknown'),
         output_field=CharField()
     )
-    
+
     gender_data = base_query.annotate(gender_group=gender_groups).values('gender_group') \
         .annotate(count=Count('id')).order_by('gender_group')
-    
-    # Maintain consistent category order
+
     categories = ['Male', 'Female', 'Other', 'Unknown']
     colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
     
     gender_dict = {item['gender_group']: item['count'] for item in gender_data}
     
-    formatted_data = {
+    return JsonResponse({
         'labels': categories,
         'data': [gender_dict.get(cat, 0) for cat in categories],
         'colors': colors
-    }
-    
-    return JsonResponse(formatted_data)
+    })
 
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
@@ -1024,12 +1344,13 @@ def get_geo_violations_by_state(request):
 def get_geo_violations_demographics(request, type):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
+    today = timezone.datetime.now()
     
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
         state_name__isnull=False,
         hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name'))
+    ).exclude(state_name=F('hospital_state_name')).filter(preauth_initiated_date__date = today)
     
     if districts:
         base_query = base_query.filter(district_name__in=districts)
@@ -1504,7 +1825,7 @@ def get_ophthalmology_distribution(request):
 #     page          = int(request.GET.get('page', 1))
 #     page_size     = int(request.GET.get('page_size', 50))
 
-#     # 0) Fixed test date (you can swap back to timezone.now().date() in prod)
+#     # 0) Fixed test date (you can swap back to date(2025, 2, 5) in prod)
 #     today = date(2025, 2, 5)
 
 #     # 1) Capacity map = number_of_surgeons * 30
@@ -1603,7 +1924,7 @@ def get_ophthalmology_distribution(request):
 #     district_param = request.GET.get('district', '')
 #     districts     = district_param.split(',') if district_param else []
 
-#     # Fixed test date (use timezone.now().date() in production)
+#     # Fixed test date (use date(2025, 2, 5) in production)
 #     today = date(2025, 2, 5)
 
 #     # 1) Base QS: Only today’s cataract (SE) cases
@@ -1750,232 +2071,15 @@ def get_ophthalmology_demographics(request, type):
         'colors': colors
     })
 
-def get_age_distribution(request):
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
-    
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P'
-    )
-    
-    if districts:
-        queryset = queryset.filter(district_name__in=districts)
-    
-    # Define age groups
-    age_groups = {
-        '15-29': Count('id', filter=Q(age_years__gte=15, age_years__lte=29)),
-        '30-44': Count('id', filter=Q(age_years__gte=30, age_years__lte=44)),
-        '45-59': Count('id', filter=Q(age_years__gte=45, age_years__lte=59)),
-        '60+': Count('id', filter=Q(age_years__gte=60))
-    }
-    
-    # Get counts for each age group
-    age_data = queryset.aggregate(**age_groups)
-    
-    return JsonResponse({
-        'labels': list(age_data.keys()),
-        'data': list(age_data.values()),
-        'colors': ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']
-    })
-
-def get_gender_distribution(request):
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
-    
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P'
-    )
-    
-    if districts:
-        queryset = queryset.filter(district_name__in=districts)
-    
-    # Get raw gender counts
-    gender_data = queryset.values('gender').annotate(
-        count=Count('id')
-    ).order_by('-count')
-    
-    # Standardize gender labels and aggregate
-    standardized_data = {
-        'Male': 0,
-        'Female': 0,
-        'Unknown': 0
-    }
-    
-    gender_mappings = {
-        'M': 'Male',
-        'MALE': 'Male',
-        'F': 'Female',
-        'FEMALE': 'Female'
-    }
-    
-    for item in gender_data:
-        gender = str(item['gender']).strip().upper() if item['gender'] else 'Unknown'
-        
-        if gender in gender_mappings:
-            standardized_data[gender_mappings[gender]] += item['count']
-        else:
-            # Only count as Unknown if not a recognized male/female value
-            if gender not in ['MALE', 'FEMALE', 'M', 'F']:
-                standardized_data['Unknown'] += item['count']
-    
-    # Remove Unknown if count is 0
-    if standardized_data['Unknown'] == 0:
-        del standardized_data['Unknown']
-    
-    # Prepare response
-    labels = []
-    data = []
-    
-    if standardized_data.get('Male', 0) > 0:
-        labels.append('Male')
-        data.append(standardized_data['Male'])
-    
-    if standardized_data.get('Female', 0) > 0:
-        labels.append('Female')
-        data.append(standardized_data['Female'])
-    
-    if standardized_data.get('Unknown', 0) > 0:
-        labels.append('Unknown')
-        data.append(standardized_data['Unknown'])
-    
-    return JsonResponse({
-        'labels': labels,
-        'data': data,
-        'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
-    })
-
-def download_flagged_claims_excel(request):
-    # 1. Read the same filter param
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
-
-    # 2. Build the same queryset (no pagination)
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    qs = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P')
-    )
-    if districts:
-        qs = qs.filter(district_name__in=districts)
-
-    # 3. Assemble data into a list of dicts
-    rows = []
-    for case in qs:
-        rows.append({
-            'Claim ID': case.registration_id or case.case_id or 'N/A',
-            'Patient Name': case.patient_name or f"Patient {case.member_id}",
-            'Hospital Name': case.hospital_name or 'N/A',
-            'District': case.district_name or 'N/A',
-            'Amount': case.claim_initiated_amount or 0,
-            'Reason': 'Suspicious hospital',
-        })
-
-    # 4. Create a DataFrame
-    df = pd.DataFrame(rows)
-
-    # 5. Write to an in-memory Excel file
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Flagged Claims')
-        workbook  = writer.book
-        worksheet = writer.sheets['Flagged Claims']
-
-        # Style: red fill + white font for any cell whose value matches
-        red_fill   = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
-        white_font = Font(color='FFFFFFFF')
-
-        # Find all cells in the sheet, check value
-        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
-            for cell in row:
-                if isinstance(cell.value, str) and cell.value.strip().lower() == 'suspicious hospital':
-                    cell.fill = red_fill
-                    cell.font = white_font
-
-    buffer.seek(0)
-
-    response = HttpResponse(
-        buffer,
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-    response['Content-Disposition'] = 'attachment; filename="flagged_claims.xlsx"'
-    return response
-
-@require_http_methods(["GET", "POST"])
-def download_flagged_claims_report(request):
-    # 1) Read parameters & chart images
-    district = request.POST.get('district', '')
-    districts = district.split(',') if district else []
-
-    # Each value is "data:image/png;base64,XXXXX"
-    def strip_prefix(data_url):
-        return data_url.split('base64,', 1)[1]
-
-    flagged_b64 = strip_prefix(request.POST.get('flagged_chart', ''))
-    age_b64     = strip_prefix(request.POST.get('age_chart', ''))
-    gender_b64  = strip_prefix(request.POST.get('gender_chart', ''))
-    age_callouts    = request.POST.get('age_callouts', '')
-    gender_callouts = request.POST.get('gender_callouts', '')
-
-    # 2) Fetch the FULL flagged-claims data (no pagination)
-    suspicious_ids = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    qs = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_ids) &
-        Q(hospital_type='P')
-    )
-    if districts:
-        qs = qs.filter(district_name__in=districts)
-
-    table_rows = []
-    for idx, case in enumerate(qs, start=1):
-        table_rows.append({
-            'serial_no':     idx,
-            'claim_id':      case.registration_id or case.case_id or 'N/A',
-            'patient_name':  case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
-            'district_name': case.district_name or 'N/A',
-            'amount':        case.claim_initiated_amount or 0,
-            'reason':        'Suspicious hospital'
-        })
-    report_districts = sorted({
-        row['district_name'] 
-        for row in table_rows 
-        if row['district_name'] and row['district_name'] != 'N/A'
-    })
-
-    # 3) Render HTML via a dedicated template
-    context = {
-        'logo_url':    request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
-        'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'table_rows':  table_rows,
-        'report_districts': report_districts,
-        'flagged_b64': flagged_b64,
-        'age_b64':     age_b64,
-        'gender_b64':  gender_b64,
-        'age_callouts':    age_callouts,
-        'gender_callouts': gender_callouts,
-    }
-    html_string = render_to_string('flagged_claims_report.html', context)
-
-    # 4) Generate PDF
-    html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
-    pdf  = html.write_pdf()
-
-    # 5) Return as attachment
-    response = HttpResponse(pdf, content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
-    return response
-
 @require_http_methods(["GET"])
 def download_high_value_claims_excel(request):
     # 1) read district filter
     district_param = request.GET.get('district', '')
     districts     = district_param.split(',') if district_param else []
+    today = date(2025, 2, 5)
 
     # 2) base queryset for P-type hospitals
-    qs = Last24Hour.objects.filter(hospital_type='P')
+    qs = Last24Hour.objects.filter(hospital_type='P', preauth_initiated_date__date=today)
     if districts:
         qs = qs.filter(district_name__in=districts)
 
@@ -2048,6 +2152,7 @@ def download_high_value_claims_excel(request):
 @require_POST
 @csrf_protect
 def download_high_value_claims_report(request):
+    today = date(2025, 2, 5)
     # 1) Read inputs
     case_type      = request.POST.get('case_type', 'all').lower()   # 'all','surgical','medical'
     district_param = request.POST.get('district', '')
@@ -2072,7 +2177,7 @@ def download_high_value_claims_report(request):
     medical_gen_callouts  = request.POST.get('medical_gender_callouts','')
 
     # 3) Build querysets based on case_type
-    base_qs = Last24Hour.objects.filter(hospital_type='P')
+    base_qs = Last24Hour.objects.filter(hospital_type='P', preauth_initiated_date__date=today)
     surgical_qs = base_qs.none()
     medical_qs  = base_qs.none()
 

@@ -19,7 +19,7 @@ class Command(BaseCommand):
         # Add first run immediately
         scheduler.add_job(
             file_check_job,
-            trigger=IntervalTrigger(minutes=5),
+            trigger=IntervalTrigger(minutes=1),
             id='file_check',
             max_instances=1,
             next_run_time=datetime.now()  # Now works with correct import
