@@ -1,270 +1,250 @@
+{% extends 'base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PMJAY Fraud Detection Dashboard, Bihar</title>
-    <link rel="stylesheet" href="{% static 'css/demo/styles.css' %}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="{% static 'js/lib/chart.min.js' %}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <div class="container">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-bg-image"></div>
-            <div class="sidebar-inner">
-                <div class="sidebar-header">
-                    <a href="index.html" class="brand-logo">
-                        <img src="/static/images/pmjaylogo.png" alt="logo" style="width: 90px; height: auto;">
-                    </a>
-                </div>
-                <ul class="sidebar-menu">
-                    <li class="active">
-                        <a href="#">
-                            <i class="fas fa-tachometer-alt"></i>
-                            <span>Dashboard</span>
-                        </a>
-                    </li>
-                    <!-- Add other menu items here -->
-                </ul>
+
+{% block title %}Dashboard – PMJAY Fraud Detection{% endblock %}
+
+{% block content %}
+    <div class="generated-on">
+        <h5>
+        Generated on: 
+        <span id="generatedOn">
+            <span class="gen-date"></span><span class="gen-separator">, </span><span class="gen-time"></span>
+        </span>
+        </h5>
+    </div>
+
+    <div class="district-filter">
+        <div class="dropdown-container">
+            <!-- Visible trigger (div instead of select) -->
+            <div class="dropdown-trigger">
+                <span class="selected-value">All Districts</span>
+                <i class="fas fa-chevron-down dropdown-icon"></i>
             </div>
             
-            <!-- Logout Button (now at true bottom) -->
-            <div class="sidebar-footer">
-                <a href="{% url 'logout' %}" class="logout-btn">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Log Out</span>
-                </a>
+            <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
+            <select id="districtDropdown" class="hidden-select" multiple>
+                <option value="">All Districts</option>
+            </select>
+            
+            <!-- Custom dropdown content -->
+            <div class="dropdown-content">
+                <div class="search-box">
+                    <input type="text" placeholder="Search districts..." class="search-input">
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+                <div class="dropdown-options">
+                    <!-- This will be populated by JavaScript -->
+                    <div class="option-item all-districts">
+                        <input type="checkbox" id="selectAll" class="district-checkbox">
+                        <label for="selectAll">All Districts</label>
+                    </div>
+                </div>
             </div>
         </div>
-
-        <!-- Main Content -->
-        <div class="main-content" id="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <button class="toggle-btn" id="toggle-btn">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <div class="header-title">
-                        <h1>PMJAY FRAUD DETECTION DASHBOARD, BIHAR</h1>
+    </div>
+    <div class="dashboard-cards">
+        <!-- Column 1 -->
+        <div class="card-column main-column">
+            <!-- Flagged Claims Card -->
+            <div class="card flagged-claims" 
+            data-modal-title="Flagged Claims Details">
+                <button id="download-flagged" class="download-btn"  data-download-url="{% url 'download_flagged_claims' %}" data-district="{{ district_param|urlencode }}">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>Patient Admitted in Watchlist Hospitals</h2>
+                    <span class="card-value">0</span>
+                    {% comment %} <div class="card-trend up">↑ 12% from last month</div> {% endcomment %}
+                </div>
+                <div class="card-hover-content">
+                    <div class="time-metric">
+                        <span class="time-label">Overall:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Yesterday:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Last 30 days:</span>
+                        <span class="time-value">0</span>
                     </div>
                 </div>
-                <!-- You can add user profile or other header elements here -->
-            </header>
-
-            <!-- Content Area -->
-            <div class="content">
-                <div class="generated-on">
-                    <h5>
-                      Generated on: 
-                      <span id="generatedOn">
-                        <span class="gen-date"></span><span class="gen-separator">, </span><span class="gen-time"></span>
-                      </span>
-                    </h5>
+            </div>
+            
+            <!-- High Value Claims Card -->
+            <div class="card high-value" 
+            data-download-url="{% url 'download_high_value_claims' %}"
+            data-district="{{ district_param|urlencode }}">
+                <button class="download-btn">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>High Value Claims</h2>
+                    <span class="card-value">0</span>
+                    {% comment %} <div class="card-trend down">↓ 5% from last month</div> {% endcomment %}
                 </div>
-                
-                <div class="district-filter">
-                    <div class="dropdown-container">
-                        <!-- Visible trigger (div instead of select) -->
-                        <div class="dropdown-trigger">
-                            <span class="selected-value">All Districts</span>
-                            <i class="fas fa-chevron-down dropdown-icon"></i>
+                <div class="card-hover-content split-view">
+                    <!-- Surgical Section -->
+                    <div class="category-box surgical">
+                        <div class="category-header surgical-header">
+                            <h4>Surgical</h4>
                         </div>
-                        
-                        <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
-                        <select id="districtDropdown" class="hidden-select" multiple>
-                            <option value="">All Districts</option>
-                        </select>
-                        
-                        <!-- Custom dropdown content -->
-                        <div class="dropdown-content">
-                            <div class="search-box">
-                                <input type="text" placeholder="Search districts..." class="search-input">
-                                <i class="fas fa-search search-icon"></i>
-                            </div>
-                            <div class="dropdown-options">
-                                <!-- This will be populated by JavaScript -->
-                                <div class="option-item all-districts">
-                                    <input type="checkbox" id="selectAll" class="district-checkbox">
-                                    <label for="selectAll">All Districts</label>
-                                </div>
-                            </div>
+                        <div class="time-metric">
+                            <span class="time-label">Overall:</span>
+                            <span class="time-value">0</span>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Dashboard Cards -->
-                <div class="dashboard-cards">
-                    <!-- Column 1 -->
-                    <div class="card-column main-column">
-                        <!-- Flagged Claims Card -->
-                        <div class="card flagged-claims" 
-                        data-modal-title="Flagged Claims Details">
-                            <button id="download-flagged" class="download-btn"  data-download-url="{% url 'download_flagged_claims' %}" data-district="{{ district_param|urlencode }}">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>Patient Admitted in Watchlist Hospitals</h2>
-                                <span class="card-value">0</span>
-                                {% comment %} <div class="card-trend up">↑ 12% from last month</div> {% endcomment %}
-                            </div>
-                            <div class="card-hover-content">
-                                <div class="time-metric">
-                                    <span class="time-label">Overall:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Yesterday:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Last 30 days:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                            </div>
+                        <div class="time-metric">
+                            <span class="time-label">Yesterday:</span>
+                            <span class="time-value">0</span>
                         </div>
-                        
-                        <!-- High Value Claims Card -->
-                        <div class="card high-value" 
-                        data-download-url="{% url 'download_high_value_claims' %}"
-                        data-district="{{ district_param|urlencode }}">
-                            <button class="download-btn">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>High Value Claims</h2>
-                                <span class="card-value">0</span>
-                                {% comment %} <div class="card-trend down">↓ 5% from last month</div> {% endcomment %}
-                            </div>
-                            <div class="card-hover-content split-view">
-                                <!-- Surgical Section -->
-                                <div class="category-box surgical">
-                                    <div class="category-header surgical-header">
-                                        <h4>Surgical</h4>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Overall:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Yesterday:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Last 30 days:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Divider Line -->
-                                <div class="vertical-divider"></div>
-                                
-                                <!-- Medical Section -->
-                                <div class="category-box medical">
-                                    <div class="category-header medical-header">
-                                        <h4>Medical</h4>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Overall:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Yesterday:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                    <div class="time-metric">
-                                        <span class="time-label">Last 30 days:</span>
-                                        <span class="time-value">0</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Hospital Bed Cases Card -->
-                        <div class="card hospital-beds" 
-                        data-details-url="{% url 'get_hospital_bed_details' %}"
-                        data-download-url="{% url 'download_hospital_bed_cases_excel' %}"
-                        data-district="{{ district_param|urlencode }}">
-                            <button class="download-btn">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>Hospital Bed Cases</h2>
-                                <span class="card-value">0</span>
-                                {% comment %} <div class="card-trend up">↑ 8% from last month</div> {% endcomment %}
-                            </div>
-                            <div class="card-hover-content">
-                                <div class="time-metric">
-                                    <span class="time-label">Overall:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Yesterday:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Last 30 days:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="violations-container" style="display:none;"></div>
-                            </div>
-                        </div>
-                        
-                        <!-- Family ID Cases Card -->
-                        <div class="card family-id" 
-                        data-details-url="{% url 'get_family_id_cases_details' %}"
-                        data-download-url="{% url 'download_family_id_cases_excel' %}"
-                        data-district="{{ district_param|urlencode }}">
-                            <button class="download-btn">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>Family ID Cases</h2>
-                                <span class="card-value">0</span>
-                                {% comment %} <div class="card-trend neutral">→ No change</div> {% endcomment %}
-                            </div>
-                            <div class="card-hover-content">
-                                <div class="time-metric">
-                                    <span class="time-label">Overall:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Yesterday:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                                <div class="time-metric">
-                                    <span class="time-label">Last 30 days:</span>
-                                    <span class="time-value">0</span>
-                                </div>
-                            </div>
+                        <div class="time-metric">
+                            <span class="time-label">Last 30 days:</span>
+                            <span class="time-value">0</span>
                         </div>
                     </div>
                     
-                    <!-- Column 2 -->
-                    <div class="card-column secondary-column">
-                        <!-- Geographic Anomalies Card -->
-                        <div class="card geo-anomalies" 
-                        data-details-url="{% url 'get_geo_anomalies_details' %}"
-                        data-download-url="{% url 'geographic_anomalies_excel' %}"
-                        data-district="{{ district_param|urlencode }}">
-                            <button class="download-btn">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>Geographic Anomalies</h2>
-                                <span class="card-value">0</span>
-                                {% comment %} <div class="card-trend up">↑ 15% from last month</div> {% endcomment %}
+                    <!-- Divider Line -->
+                    <div class="vertical-divider"></div>
+                    
+                    <!-- Medical Section -->
+                    <div class="category-box medical">
+                        <div class="category-header medical-header">
+                            <h4>Medical</h4>
+                        </div>
+                        <div class="time-metric">
+                            <span class="time-label">Overall:</span>
+                            <span class="time-value">0</span>
+                        </div>
+                        <div class="time-metric">
+                            <span class="time-label">Yesterday:</span>
+                            <span class="time-value">0</span>
+                        </div>
+                        <div class="time-metric">
+                            <span class="time-label">Last 30 days:</span>
+                            <span class="time-value">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hospital Bed Cases Card -->
+            <div class="card hospital-beds" 
+            data-details-url="{% url 'get_hospital_bed_details' %}"
+            data-download-url="{% url 'download_hospital_bed_cases_excel' %}"
+            data-district="{{ district_param|urlencode }}">
+                <button class="download-btn">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>Hospital Bed Cases</h2>
+                    <span class="card-value">0</span>
+                    {% comment %} <div class="card-trend up">↑ 8% from last month</div> {% endcomment %}
+                </div>
+                <div class="card-hover-content">
+                    <div class="time-metric">
+                        <span class="time-label">Overall:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Yesterday:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Last 30 days:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="violations-container" style="display:none;"></div>
+                </div>
+            </div>
+            
+            <!-- Family ID Cases Card -->
+            <div class="card family-id" 
+            data-details-url="{% url 'get_family_id_cases_details' %}"
+            data-download-url="{% url 'download_family_id_cases_excel' %}"
+            data-district="{{ district_param|urlencode }}">
+                <button class="download-btn">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>Family ID Cases</h2>
+                    <span class="card-value">0</span>
+                    {% comment %} <div class="card-trend neutral">→ No change</div> {% endcomment %}
+                </div>
+                <div class="card-hover-content">
+                    <div class="time-metric">
+                        <span class="time-label">Overall:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Yesterday:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Last 30 days:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Column 2 -->
+        <div class="card-column secondary-column">
+            <!-- Geographic Anomalies Card -->
+            <div class="card geo-anomalies" 
+            data-details-url="{% url 'get_geo_anomalies_details' %}"
+            data-download-url="{% url 'geographic_anomalies_excel' %}"
+            data-district="{{ district_param|urlencode }}">
+                <button class="download-btn">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>Geographic Anomalies</h2>
+                    <span class="card-value">0</span>
+                    {% comment %} <div class="card-trend up">↑ 15% from last month</div> {% endcomment %}
+                </div>
+                <div class="card-hover-content">
+                    <div class="time-metric">
+                        <span class="time-label">Overall:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Yesterday:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="time-label">Last 30 days:</span>
+                        <span class="time-value">0</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card ophthalmology" 
+            data-download-url="{% url 'download_ophthalmology_excel' %}"
+            data-district="{{ district_param|urlencode }}">
+                <button class="download-btn">
+                    <i class="fas fa-download"></i>
+                    <span class="btn-text"></span>
+                </button>
+                <div class="card-main">
+                    <h2>Ophthalmology (Cataract)</h2>
+                    <span class="card-value">0</span>
+                    
+                    <!-- Sub-cards Container -->
+                    <div class="sub-cards">
+                        <!-- Age < 40 Sub-card -->
+                        <div class="sub-card age">
+                            <div class="sub-card-header">
+                                <h3>Age < 40</h3>
+                                <div class="card-value">0</div>
                             </div>
-                            <div class="card-hover-content">
+                            {% comment %} <div class="card-trend up">↑ 22%</div> {% endcomment %}
+                            <div class="sub-card-hover">
                                 <div class="time-metric">
                                     <span class="time-label">Overall:</span>
                                     <span class="time-value">0</span>
@@ -280,87 +260,48 @@
                             </div>
                         </div>
                         
-                        <div class="card ophthalmology" 
-                        data-download-url="{% url 'download_ophthalmology_excel' %}"
-                        data-district="{{ district_param|urlencode }}">
-                            <button class="download-btn">
-                                <i class="fas fa-download"></i>
-                                <span class="btn-text"></span>
-                            </button>
-                            <div class="card-main">
-                                <h2>Ophthalmology (Cataract)</h2>
-                                <span class="card-value">0</span>
-                                
-                                <!-- Sub-cards Container -->
-                                <div class="sub-cards">
-                                    <!-- Age < 40 Sub-card -->
-                                    <div class="sub-card age">
-                                        <div class="sub-card-header">
-                                            <h3>Age < 40</h3>
-                                            <div class="card-value">0</div>
-                                        </div>
-                                        {% comment %} <div class="card-trend up">↑ 22%</div> {% endcomment %}
-                                        <div class="sub-card-hover">
-                                            <div class="time-metric">
-                                                <span class="time-label">Overall:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Yesterday:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Last 30 days:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- OT Cases Sub-card -->
-                                    <div class="sub-card ot-cases">
-                                        <div class="sub-card-header">
-                                            <h3>OT Cases</h3>
-                                            <div class="card-value">0</div>
-                                        </div>
-                                        {% comment %} <div class="card-trend down">↓ 3%</div> {% endcomment %}
-                                        <div class="sub-card-hover">
-                                            <div class="time-metric">
-                                                <span class="time-label">Overall:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Yesterday:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Last 30 days:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Preauth Time Sub-card -->
-                                    <div class="sub-card preauth">
-                                        <div class="sub-card-header">
-                                            <h3>Preauth Time</h3>
-                                            <div class="card-value">0</div>
-                                        </div>
-                                        {% comment %} <div class="card-trend neutral">→ 0%</div> {% endcomment %}
-                                        <div class="sub-card-hover">
-                                            <div class="time-metric">
-                                                <span class="time-label">Overall Avg:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Yesterday:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                            <div class="time-metric">
-                                                <span class="time-label">Last 30 days:</span>
-                                                <span class="time-value">0</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                        <!-- OT Cases Sub-card -->
+                        <div class="sub-card ot-cases">
+                            <div class="sub-card-header">
+                                <h3>OT Cases</h3>
+                                <div class="card-value">0</div>
+                            </div>
+                            {% comment %} <div class="card-trend down">↓ 3%</div> {% endcomment %}
+                            <div class="sub-card-hover">
+                                <div class="time-metric">
+                                    <span class="time-label">Overall:</span>
+                                    <span class="time-value">0</span>
+                                </div>
+                                <div class="time-metric">
+                                    <span class="time-label">Yesterday:</span>
+                                    <span class="time-value">0</span>
+                                </div>
+                                <div class="time-metric">
+                                    <span class="time-label">Last 30 days:</span>
+                                    <span class="time-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Preauth Time Sub-card -->
+                        <div class="sub-card preauth">
+                            <div class="sub-card-header">
+                                <h3>Preauth Time</h3>
+                                <div class="card-value">0</div>
+                            </div>
+                            {% comment %} <div class="card-trend neutral">→ 0%</div> {% endcomment %}
+                            <div class="sub-card-hover">
+                                <div class="time-metric">
+                                    <span class="time-label">Overall Avg:</span>
+                                    <span class="time-value">0</span>
+                                </div>
+                                <div class="time-metric">
+                                    <span class="time-label">Yesterday:</span>
+                                    <span class="time-value">0</span>
+                                </div>
+                                <div class="time-metric">
+                                    <span class="time-label">Last 30 days:</span>
+                                    <span class="time-value">0</span>
                                 </div>
                             </div>
                         </div>
@@ -370,7 +311,7 @@
         </div>
     </div>
 
-    <!-- Modal Template -->
+    <!-- modal markup, if you want it only on this page -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal-container" 
         data-excel-url=""
@@ -380,11 +321,11 @@
             <!-- Loader -->
             <div id="pdfLoader" class="pdf-loading-overlay">
                 <div class="pdf-loading-content">
-                  <h3>Generating PDF Report</h3>
-                  <div class="progress-container">
+                <h3>Generating PDF Report</h3>
+                <div class="progress-container">
                     <div id="pdfProgressBar" class="progress-bar"></div>
                     <div id="pdfProgressText" class="progress-text">0%</div>
-                  </div>
+                </div>
                 </div>
             </div>
 
@@ -443,23 +384,19 @@
             </div>
         </div>
     </div>
+{% endblock %}
 
-    <script src="{% static 'js/lib/chart.min.js' %}"></script>
-    <script src="{% static 'js/charts.js' %}"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script>
-        window.PDF_URLS = {
-          flagged:   "{% url 'download_flagged_claims_report' %}",
-          highValue: "{% url 'download_high_value_claims_report' %}",
-          hospitalBeds:  "{% url 'download_hospital_bed_report' %}",
-          familyId:      "{% url 'download_family_id_cases_report' %}",
-          geoAnomalies:  "{% url 'download_geo_anomalies_pdf_report' %}",
-          ophthalmology: "{% url 'download_ophthalmology_pdf_report' %}"
-        };
-    </script>
-    <script src="{% static 'js/dashboard.js' %}"></script>
-</body>
-</html>
+{% block extra_js %}
+  <!-- first include global PDF_URLS script if needed -->
+  <script>
+    window.PDF_URLS = {
+        flagged:   "{% url 'download_flagged_claims_report' %}",
+        highValue: "{% url 'download_high_value_claims_report' %}",
+        hospitalBeds:  "{% url 'download_hospital_bed_report' %}",
+        familyId:      "{% url 'download_family_id_cases_report' %}",
+        geoAnomalies:  "{% url 'download_geo_anomalies_pdf_report' %}",
+        ophthalmology: "{% url 'download_ophthalmology_pdf_report' %}"
+      };
+  </script>
+  <script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

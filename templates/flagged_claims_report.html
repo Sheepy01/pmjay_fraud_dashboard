@@ -111,9 +111,16 @@
             <table>
               <thead>
                 <tr>
-                  <th>#</th><th>Claim ID</th><th>Patient</th>
-                  <th>Hospital</th><th>District</th>
-                  <th>Amount (₹)</th><th>Reason</th>
+                  <th>#</th>
+                  <th>Claim ID</th>
+                  <th>Patient</th>
+                  <th>District</th>
+                  <th>Preauth Initiated Date</th>
+                  <th>Preauth Initiated Time</th>
+                  <th>Hospital ID</th>
+                  <th>Hospital Name</th>
+                  <th>Amount (₹)</th>
+                  <th>Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -122,8 +129,11 @@
                   <td>{{ row.serial_no }}</td>
                   <td>{{ row.claim_id }}</td>
                   <td>{{ row.patient_name }}</td>
-                  <td>{{ row.hospital_name }}</td>
                   <td>{{ row.district_name }}</td>
+                  <td>{{ row.preauth_initiated_date }}</td>
+                  <td>{{ row.preauth_initiated_time }}</td>
+                  <td>{{ row.hospital_id }}</td>
+                  <td>{{ row.hospital_name }}</td>
                   <td>{{ row.amount }}</td>
                   <td>{{ row.reason }}</td>
                 </tr>

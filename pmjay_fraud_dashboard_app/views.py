@@ -1,6 +1,7 @@
-from django.db.models import Sum, Q, Avg, F, Func, Count, Subquery, Max
+from django.db.models import Sum, Q, Avg, F, Func, Count, Subquery, Max, OuterRef, Value, BooleanField, Exists, IntegerField
 from .models import Last24Hour, SuspiciousHospital, HospitalBeds
 from django.views.decorators.http import require_http_methods
+from openpyxl.styles import PatternFill, Font, Border, Side
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Case, When, Value, CharField
@@ -12,9 +13,11 @@ from weasyprint.text.fonts import FontConfiguration
 from django.http import JsonResponse, HttpResponse
 from django.db.models.functions import TruncDate
 from django.utils.timezone import now, timedelta
-from openpyxl.styles import PatternFill, Font
+from django.core.management import call_command
 from django.shortcuts import render, redirect
+from django.db.models.functions import Cast
 from django.core.paginator import Paginator
+from collections import defaultdict
 from django.shortcuts import render
 from django.utils import timezone
 from datetime import timedelta
@@ -24,7 +27,6 @@ import datetime
 import random
 import re
 import io
-from django.core.management import call_command
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -129,8 +131,11 @@ def get_flagged_claims_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
+            'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
+            'hospital_id': case.hospital_id or 'N/A',
+            'hospital_name': case.hospital_name or 'N/A',
             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'reason': 'Suspicious hospital'
         })
@@ -307,19 +312,20 @@ def download_flagged_claims_excel(request):
     rows = [{
         'Claim ID': case.registration_id or case.case_id,
         'Patient Name': case.patient_name or f"Patient {case.member_id}",
-        'Hospital Name': case.hospital_name,
         'District': case.district_name,
+        'Preauth Initiated Date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
+        'Preauth Initiated Time': case.preauth_initiated_time,
+        'Hospital ID': case.hospital_id,
+        'Hospital Name': case.hospital_name,
         'Amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
         'Reason': 'Suspicious hospital',
         'Date': case.preauth_initiated_date.strftime('%Y-%m-%d')
     } for case in qs.only(
-        'registration_id', 'case_id', 'patient_name', 'member_id',
-        'hospital_name', 'district_name', 'claim_initiated_amount',
-        'preauth_initiated_date'
+        'registration_id', 'case_id', 'patient_name', 'member_id', 'district_name', 'preauth_initiated_date', 'preauth_initiated_time', 'hospital_id', 'hospital_name', 'claim_initiated_amount', 'preauth_initiated_date'
     )]
 
     # 4. Create DataFrame with defined column order
-    columns = ['Claim ID', 'Patient Name', 'Hospital Name', 'District', 
+    columns = ['Claim ID', 'Patient Name', 'District', 'Preauth Initiated Date', 'Preauth Initiated Time', 'Hospital ID', 'Hospital Name',  
               'Amount', 'Reason', 'Date']
     df = pd.DataFrame(rows, columns=columns)
 
@@ -335,15 +341,10 @@ def download_flagged_claims_excel(request):
         white_font = Font(color='FFFFFF')
         
         # Apply styling to entire Reason column
-        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=6, max_col=6):
+        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=9, max_col=9):
             for cell in row:
                 cell.fill = red_fill
                 cell.font = white_font
-                
-        # Format amount column as currency
-        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=5, max_col=5):
-            for cell in row:
-                cell.number_format = '₹#,##0.00'
 
     buffer.seek(0)
 
@@ -387,8 +388,11 @@ def download_flagged_claims_report(request):
             'serial_no':     idx,
             'claim_id':      case.registration_id or case.case_id or 'N/A',
             'patient_name':  case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': case.preauth_initiated_time,
+            'hospital_id': case.hospital_id or 'N/A',
+            'hospital_name': case.hospital_name or 'N/A',
             'amount':        case.claim_initiated_amount or 0,
             'reason':        'Suspicious hospital'
         })
@@ -422,83 +426,83 @@ def download_flagged_claims_report(request):
     response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
     return response
 
-SHAPEFILE_DISTRICT_MAPPING = {
-    "sheohar": 0,
-    "sitamarhi": 1,
-    "madhubani": 2,
-    "supaul": 3,
-    "araria": 4,
-    "purnia": 5,
-    "katihar": 6,
-    "madhepura": 7,
-    "saharsa": 8,
-    "darbhanga": 9,
-    "muzaffarpur": 10,
-    "gopalganj": 11,
-    "siwan": 12,
-    "saran": 13,
-    "vaishali": 14,
-    "samastipur": 15,
-    "begusarai": 16,
-    "khagaria": 17,
-    "bhagalpur": 18,
-    "banka": 19,
-    "munger": 20,
-    "lakhisarai": 21,
-    "sheikhpura": 22,
-    "nalanda": 23,
-    "patna": 24,
-    "bhojpur": 25,
-    "kaimur": 26,
-    "rohtas": 27,
-    "aurangabad": 28,
-    "gaya": 29,
-    "nawada": 30,
-    "jamui": 31,
-    "jehanabad": 32,
-    "arwal": 33,
-    "east champaran": 34,
-    "purbi champaran": 34,
-    "kishanganj": 35,
-    "buxar": 36,
-    "west champaran": 37,
-}
+# SHAPEFILE_DISTRICT_MAPPING = {
+#     "sheohar": 0,
+#     "sitamarhi": 1,
+#     "madhubani": 2,
+#     "supaul": 3,
+#     "araria": 4,
+#     "purnia": 5,
+#     "katihar": 6,
+#     "madhepura": 7,
+#     "saharsa": 8,
+#     "darbhanga": 9,
+#     "muzaffarpur": 10,
+#     "gopalganj": 11,
+#     "siwan": 12,
+#     "saran": 13,
+#     "vaishali": 14,
+#     "samastipur": 15,
+#     "begusarai": 16,
+#     "khagaria": 17,
+#     "bhagalpur": 18,
+#     "banka": 19,
+#     "munger": 20,
+#     "lakhisarai": 21,
+#     "sheikhpura": 22,
+#     "nalanda": 23,
+#     "patna": 24,
+#     "bhojpur": 25,
+#     "kaimur": 26,
+#     "rohtas": 27,
+#     "aurangabad": 28,
+#     "gaya": 29,
+#     "nawada": 30,
+#     "jamui": 31,
+#     "jehanabad": 32,
+#     "arwal": 33,
+#     "east champaran": 34,
+#     "purbi champaran": 34,
+#     "kishanganj": 35,
+#     "buxar": 36,
+#     "west champaran": 37,
+# }
 
-def patient_admitted_in_watchlist_hospitals_heatmap_data(request):
-    today = date(2025, 2, 5)  # Replace with dynamic date if needed
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P',
-        preauth_initiated_date__date=today
-    )
+# def patient_admitted_in_watchlist_hospitals_heatmap_data(request):
+#     today = date(2025, 2, 5)  # Replace with dynamic date if needed
+#     queryset = Last24Hour.objects.filter(
+#         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+#         hospital_type='P',
+#         preauth_initiated_date__date=today
+#     )
     
-    # Aggregate counts by district (same as bar chart)
-    district_counts = (
-        queryset.values('district_name')
-        .annotate(count=Count('id'))
-        .order_by('-count')
-    )
+#     # Aggregate counts by district (same as bar chart)
+#     district_counts = (
+#         queryset.values('district_name')
+#         .annotate(count=Count('id'))
+#         .order_by('-count')
+#     )
     
-    # Map to shapefile IDs and normalize district names
-    heatmap_data = []
-    for entry in district_counts:
-        district = entry['district_name'].strip().lower()  # Normalize
-        shapefile_id = SHAPEFILE_DISTRICT_MAPPING.get(district, None)
-        if shapefile_id is not None:
-            heatmap_data.append({
-                "DISTRICT": district.upper(),  # Match shapefile casing
-                "ID": shapefile_id,
-                "Count": entry['count']
-            })
-        else:
-            print(f"Warning: District '{district}' not found in shapefile mapping!")
+#     # Map to shapefile IDs and normalize district names
+#     heatmap_data = []
+#     for entry in district_counts:
+#         district = entry['district_name'].strip().lower()  # Normalize
+#         shapefile_id = SHAPEFILE_DISTRICT_MAPPING.get(district, None)
+#         if shapefile_id is not None:
+#             heatmap_data.append({
+#                 "DISTRICT": district.upper(),  # Match shapefile casing
+#                 "ID": shapefile_id,
+#                 "Count": entry['count']
+#             })
+#         else:
+#             print(f"Warning: District '{district}' not found in shapefile mapping!")
     
-    # Export to Excel
-    df = pd.DataFrame(heatmap_data)
-    file_path = "data/Heatmap_data_patient_admitted_in_watchlist_hospitals.xlsx"
-    df.to_excel(file_path, index=False)
+#     # Export to Excel
+#     df = pd.DataFrame(heatmap_data)
+#     file_path = "data/Heatmap_data_patient_admitted_in_watchlist_hospitals.xlsx"
+#     df.to_excel(file_path, index=False)
     
-    return HttpResponse("Heatmap data exported successfully!")
+#     return HttpResponse("Heatmap data exported successfully!")
 
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
@@ -608,8 +612,11 @@ def get_high_value_claims_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
             'district_name': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': case.preauth_initiated_time,
+            'hospital_id': case.hospital_id or 'N/A',
+            'hospital_name': case.hospital_name or 'N/A',
             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'case_type': case.case_type.upper() if case.case_type else 'N/A'
         })
@@ -967,7 +974,7 @@ def get_family_id_cases(request):
         .annotate(day=TruncDate('preauth_initiated_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
-        .filter(count__gt=2)
+        .filter(count__gt=1)
     )
     
     # Get all cases from suspicious families
@@ -1059,7 +1066,7 @@ def get_family_id_cases_details(request):
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
-        count__gt=2
+        count__gt=1
     ).values('family_id')
     
     # Main query: Cases for those suspicious families today
@@ -1085,6 +1092,9 @@ def get_family_id_cases_details(request):
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'district_name': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': case.preauth_initiated_time,
+            'hospital_id': case.hospital_id or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
             'date': case.preauth_initiated_date.date()
         })
@@ -1115,7 +1125,7 @@ def get_family_violations_by_district(request):
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
-        count__gt=2
+        count__gt=1
     ).values('family_id')
     
     # Main query: Count number of unique families per district
@@ -1152,7 +1162,7 @@ def get_family_violations_demographics(request, type):
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
-        count__gt=2
+        count__gt=1
     ).values('family_id')
     
     # Base query for demographics
@@ -1300,6 +1310,9 @@ def get_geo_anomalies_details(request):
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'district_name': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.date() or 'N/A',
+            'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
+            'hospital_id': case.hospital_id or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
             'patient_state': case.state_name or 'N/A',
             'hospital_state': case.hospital_state_name or 'N/A',
@@ -1573,6 +1586,14 @@ def get_ophthalmology_details(request):
         mask = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
     elif violation_type == 'ot':
         mask = df_base.index.isin(ot_set)
+    elif violation_type == 'multiple':
+        # more than one of the three
+        mask_age     = df_base['age_years'] < 40
+        mask_preauth = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
+        mask_ot      = df_base.index.isin(ot_set)
+        mask = ((mask_age.astype(int) +
+                 mask_preauth.astype(int) +
+                 mask_ot.astype(int)) > 1)
     else:
         mask = (
             (df_base['age_years'] < 40) |
@@ -1597,14 +1618,18 @@ def get_ophthalmology_details(request):
             'serial_no': serial,
             'claim_id': row.registration_id or row.case_id or 'N/A',
             'patient_name': row.patient_name or f"Patient {row.member_id}",
+            'hospital_id': row.hospital_id or 'N/A',
             'hospital_name': row.hospital_name or 'N/A',
             'district_name': row.district_name or 'N/A',
-            'amount': getattr(row, 'claim_initiated_amount', 0) or 0,
+            'amount': getattr(row, 'preauth_initiated_amount', 0) or 0,
             'age': row.age_years,
             'preauth_time': row.preauth_initiated_datetime.time() if pd.notnull(row.preauth_initiated_datetime) else None,
             'age_violation': row.age_years < 40 if violation_type in ('age','all') else None,
             'preauth_violation': True if violation_type in ('preauth','all') and ((row.preauth_hour<8) or (row.preauth_hour>=18)) else None,
-            'ot_violation': row.Index in ot_set if violation_type in ('ot','all') else None
+            'ot_violation': row.Index in ot_set if violation_type in ('ot','all') else None,
+            'age_violation': row.age_years < 40 if violation_type in ('age','all','multiple') else None,
+            'preauth_violation': ((row.preauth_hour<8) | (row.preauth_hour>=18)) if violation_type in ('preauth','all','multiple') else None,
+            'ot_violation': (row.Index in ot_set) if violation_type in ('ot','all','multiple') else None
         })
 
     # 9. JSON response
@@ -1658,6 +1683,11 @@ def get_ophthalmology_distribution(request):
         mask_v = df_base.index.isin(ot_set)
     elif violation_type == 'preauth':
         mask_v = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
+    elif violation_type == 'multiple':
+        mask_age     = df_base['age_years'] < 40
+        mask_preauth = (df_base['preauth_hour'] < 8) | (df_base['preauth_hour'] >= 18)
+        mask_ot      = df_base.index.isin(ot_set)
+        mask_v = ((mask_age.astype(int) + mask_preauth.astype(int) + mask_ot.astype(int)) > 1)
     else:
         mask_v = (
             (df_base['age_years'] < 40) |
@@ -2022,6 +2052,19 @@ def get_ophthalmology_demographics(request, type):
         qs = qs.filter(id__in=flagged_ot)
     elif violation_type == 'preauth':
         qs = qs.exclude(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+    elif violation_type == 'multiple':
+        # annotate each flag then sum >1
+        qs = qs.annotate(
+            age_flag=Case(When(age_years__lt=40, then=Value(1)),
+                          default=Value(0), output_field=IntegerField()),
+            preauth_flag=Case(When(~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'),
+                                  then=Value(1)),
+                              default=Value(0), output_field=IntegerField()),
+            ot_flag=Case(When(id__in=flagged_ot, then=Value(1)),
+                         default=Value(0), output_field=IntegerField())
+        ).annotate(
+            flags_sum=F('age_flag') + F('preauth_flag') + F('ot_flag')
+        ).filter(flags_sum__gt=1)
     else:  # all
         qs = qs.filter(
             Q(age_years__lt=40) |
@@ -2101,8 +2144,11 @@ def download_high_value_claims_excel(request):
                 'S.No':          idx,
                 'Claim ID':      c.registration_id or c.case_id or 'N/A',
                 'Patient Name':  c.patient_name or f"Patient {c.member_id}",
-                'Hospital Name': c.hospital_name or 'N/A',
                 'District':      c.district_name or 'N/A',
+                'Preauth Initiated Date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
+                'Preauth Initiated Time': c.preauth_initiated_time,
+                'Hospital ID': c.hospital_id or 'N/A',
+                'Hospital Name': c.hospital_name or 'N/A',
                 'Amount':        c.claim_initiated_amount or 0,
                 'Case Type':     c.case_type.upper() if c.case_type else 'N/A'
             })
@@ -2196,8 +2242,11 @@ def download_high_value_claims_report(request):
             'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
-            'hospital_name': c.hospital_name or 'N/A',
             'district_name': c.district_name or 'N/A',
+            'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': c.preauth_initiated_time,
+            'hospital_id': c.hospital_id or 'N/A',
+            'hospital_name': c.hospital_name or 'N/A',
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'SURGICAL'
         }
@@ -2208,6 +2257,10 @@ def download_high_value_claims_report(request):
             'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
+            'district_name': c.district_name or 'N/A',
+            'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': c.preauth_initiated_time,
+            'hospital_id': c.hospital_id or 'N/A',
             'hospital_name': c.hospital_name or 'N/A',
             'district_name': c.district_name or 'N/A',
             'amount':        c.claim_initiated_amount or 0,
@@ -2403,7 +2456,7 @@ def download_family_id_cases_excel(request):
         .annotate(day=TruncDate('preauth_initiated_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
-        .filter(count__gt=2)
+        .filter(count__gt=1)
         .values('family_id')
     )
     qs = (
@@ -2427,6 +2480,9 @@ def download_family_id_cases_excel(request):
             'Claim ID':      case.registration_id or case.case_id or 'N/A',
             'Patient Name':  case.patient_name or f"Patient {case.member_id}",
             'District':      case.district_name or 'N/A',
+            'Preauth Initiated Date': case.preauth_initiated_date.date().isoformat() or 'N/A',
+            'Preauth Initiated Time': case.preauth_initiated_time or 'N/A',
+            'Hospital ID': case.hospital_id or 'N/A',
             'Hospital Name': case.hospital_name or 'N/A',
             'Date':          case.preauth_initiated_date.date().isoformat()
         })
@@ -2499,7 +2555,7 @@ def download_family_id_cases_report(request):
     freq_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
     ).values('family_id','day') \
-     .annotate(cnt=Count('id')).filter(cnt__gt=2) \
+     .annotate(cnt=Count('id')).filter(cnt__gt=1) \
      .values('family_id')
 
     qs = Last24Hour.objects.filter(
@@ -2519,7 +2575,10 @@ def download_family_id_cases_report(request):
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
             'district':     c.district_name or 'N/A',
-            'hospital':     c.hospital_name or 'N/A'
+            'preauth_initiated_date':     c.preauth_initiated_date.date().isoformat() or 'N/A',
+            'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
+            'hospital_id':     c.hospital_id or 'N/A',
+            'hospital_name':     c.hospital_name or 'N/A'
         })
 
     # 3) report_districts
@@ -2578,6 +2637,9 @@ def download_geo_anomalies_excel(request):
             'Claim ID':         c.registration_id or c.case_id or 'N/A',
             'Patient Name':     c.patient_name or f"Patient {c.member_id}",
             'District':         c.district_name or 'N/A',
+            'Preauth Initiated Date':         c.preauth_initiated_date.date() or 'N/A',
+            'Preauth Initiated Time':         c.preauth_initiated_time or 'N/A',
+            'Hospital ID':    c.hospital_id or 'N/A',
             'Hospital Name':    c.hospital_name or 'N/A',
             'Patient State':    c.state_name or 'N/A',
             'Hospital State':   c.hospital_state_name or 'N/A',
@@ -2658,8 +2720,11 @@ def download_geo_anomalies_pdf_report(request):
             'serial_no':    i,
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
-            'hospital_name':c.hospital_name or 'N/A',
             'district':     c.district_name or 'N/A',
+            'preauth_initiated_date':     c.preauth_initiated_date.date() or 'N/A',
+            'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
+            'hospital_id':c.hospital_id or 'N/A',
+            'hospital_name':c.hospital_name or 'N/A',
             'patient_state':c.state_name or 'N/A',
             'hospital_state':c.hospital_state_name or 'N/A',
         })
@@ -2745,8 +2810,9 @@ def download_ophthalmology_excel(request):
         ('S.No',         lambda c,i: i),
         ('Claim ID',     lambda c,i: c.registration_id or c.case_id or 'N/A'),
         ('Patient Name', lambda c,i: c.patient_name or f"Patient {c.member_id}"),
-        ('Hospital',     lambda c,i: c.hospital_name or 'N/A'),
         ('District',     lambda c,i: c.district_name or 'N/A'),
+        ('Hospital ID',     lambda c,i: c.hospital_id or 'N/A'),
+        ('Hospital Name',     lambda c,i: c.hospital_name or 'N/A'),
         ('Amount',       lambda c,i: c.claim_initiated_amount or 0),
     ]
 
@@ -2916,8 +2982,9 @@ def download_ophthalmology_pdf_report(request):
             'serial_no':    i+1,
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
-            'hospital_name':c.hospital_name or 'N/A',
             'district':     c.district_name or 'N/A',
+            'hospital_id':  c.hospital_id or 'N/A',
+            'hospital_name':c.hospital_name or 'N/A',
             'amount':       c.claim_initiated_amount or 0,
             'age_lt_40':    bool(c.age_years and c.age_years < 40),
             'ot_cases':     bool(c.id in flagged_ot),
@@ -2948,6 +3015,583 @@ def download_ophthalmology_pdf_report(request):
     resp['Content-Disposition'] = 'attachment; filename="Ophthalmology_Cataract_PDF_Report.pdf"'
     return resp
 
+def high_alert(request):
+    today = date(2025, 2, 5)
+    district_param = request.GET.get('district', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    districts = district_param.split(',') if district_param else []
+
+    # Get watchlist hospitals
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+
+    # Base query with same filters as get_flagged_claims_details
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        (Q(preauth_initiated_date__date=today) | Q(admission_date__date=today))
+    )
+
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    annotated_cases = base_query.annotate(
+        # Renamed annotations to avoid field conflicts
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date=today
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date=today
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        )
+    )
+
+    # Calculate total flags
+    filtered_cases = annotated_cases.annotate(
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2)
+
+    # Pagination
+    paginator = Paginator(filtered_cases.order_by('-preauth_initiated_date'), page_size)
+    page_obj = paginator.get_page(page)
+
+    # Prepare response data
+    data = []
+    for idx, case in enumerate(page_obj.object_list, 1):
+        data.append({
+            'serial_no': (page_obj.number - 1) * page_size + idx,
+            'claim_id': case.registration_id or case.case_id or 'N/A',
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_id': case.hospital_id,
+            'hospital_name': case.hospital_name or 'N/A',
+            'district': case.district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
+            'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
+            'watchlist_hospital': '✓' if case.is_watchlist else '',
+            'high_value_claims': '✓' if case.is_high_value else '',
+            'hospital_bed_cases': '✓' if case.is_hospital_bed else '',
+            'family_id_cases': '✓' if case.is_family_case else '',
+            'geographic_anomalies': '✓' if case.is_geo_anomaly else '',
+            'ophthalmology_cases': '✓' if case.is_ophtha_case else '',
+        })
+
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total_records': paginator.count,
+            'total_pages': paginator.num_pages,
+            'current_page': page_obj.number,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous()
+        }
+    })
+
+def high_alert_district_distribution(request):
+    today = date(2025, 2, 5)
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # Reuse same filtering as high_alert view
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        (Q(preauth_initiated_date__date=today) | Q(admission_date__date=today)))
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+
+    # Apply full high alert criteria annotations
+    annotated = base_query.annotate(
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date=today
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date=today
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2)
+
+    # Aggregate by district
+    result = annotated.values('district_name').annotate(
+        case_count=Count('id')
+    ).order_by('-case_count')
+
+    return JsonResponse({
+        'labels': [d['district_name'] or 'Unknown' for d in result],
+        'counts': [d['case_count'] for d in result]
+    })
+
+def high_alert_demographics(request, type):
+    today = date(2025, 2, 5)
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # Reuse high alert base query
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        (Q(preauth_initiated_date__date=today) | Q(admission_date__date=today))
+    )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+
+    # Apply high alert criteria annotations
+    annotated = base_query.annotate(
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date=today
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date=today
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2)
+
+    if type == 'age':
+        age_groups = Case(
+            When(age_years__lt=20, then=Value('≤20')),
+            When(age_years__range=(20, 29), then=Value('21-30')),
+            When(age_years__range=(30, 39), then=Value('31-40')),
+            When(age_years__range=(40, 49), then=Value('41-50')),
+            When(age_years__range=(50, 59), then=Value('51-60')),
+            When(age_years__gte=60, then=Value('60+')),
+            default=Value('Unknown'),
+            output_field=CharField()
+        )
+        
+        data = annotated.annotate(age_group=age_groups).values('age_group') \
+            .annotate(count=Count('id')).order_by('age_group')
+        
+        categories = ['≤20', '21-30', '31-40', '41-50', '51-60', '60+', 'Unknown']
+        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+        
+        result = {item['age_group']: item['count'] for item in data}
+        return JsonResponse({
+            'labels': categories,
+            'data': [result.get(cat, 0) for cat in categories],
+            'colors': colors
+        })
+
+    elif type == 'gender':
+        gender_data = annotated.values('gender') \
+            .annotate(count=Count('id')).order_by('gender')
+        
+        categories = ['Male', 'Female', 'Other', 'Unknown']
+        colors = ['#36A2EB', '#FF6384', '#4BC0C0', '#C9CBCF']
+        gender_map = {'M': 'Male', 'F': 'Female', 'O': 'Other'}
+        
+        result = defaultdict(int)
+        for item in gender_data:
+            gender = gender_map.get(item['gender'], 'Unknown')
+            result[gender] += item['count']
+        
+        return JsonResponse({
+            'labels': categories,
+            'data': [result[cat] for cat in categories],
+            'colors': colors
+        })
+
+def download_high_alerts_excel(request):
+    today = date(2025, 2, 5)
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # Reuse same filtering logic as high_alert view
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        (Q(preauth_initiated_date__date=today) | Q(admission_date__date=today)))
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+
+    # Annotate cases with same logic as high_alert view
+    annotated_cases = base_query.annotate(
+        # Renamed annotations to avoid field conflicts
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date=today
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date=today
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        )
+    )
+
+    # Calculate total flags
+    filtered_cases = annotated_cases.annotate(
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2)
+
+    # Prepare data with new columns
+    rows = []
+    for case in annotated_cases.order_by('-preauth_initiated_date'):
+        rows.append({
+            'Serial No': '',  # Will be regenerated
+            'Claim ID': case.registration_id or case.case_id or 'N/A',
+            'Patient Name': case.patient_name or f"Patient {case.member_id}",
+            'Hospital ID': case.hospital_id,
+            'Hospital Name': case.hospital_name or 'N/A',
+            'District': case.district_name or 'N/A',
+            'Preauth Initiated Date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
+            'Preauth Initiated Time': case.preauth_initiated_time or 'N/A',
+            'Watchlist': case.is_watchlist,
+            'High Value': case.is_high_value,
+            'Bed Cases': case.is_hospital_bed,
+            'Family ID': case.is_family_case,
+            'Geo Anomaly': case.is_geo_anomaly,
+            'Ophthalmology': case.is_ophtha_case
+        })
+
+    # Create DataFrame with correct column order
+    columns = [
+        'Serial No', 'Claim ID', 'Patient Name', 'Hospital ID', 'Hospital Name',
+        'District', 'Preauth Initiated Date', 'Preauth Initiated Time',
+        'Watchlist', 'High Value', 'Bed Cases', 'Family ID', 'Geo Anomaly', 'Ophthalmology'
+    ]
+    df = pd.DataFrame(rows, columns=columns)
+    df['Serial No'] = df.index + 1  # Continuous numbering
+
+    # Excel styling
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='High Alerts')
+        workbook = writer.book
+        worksheet = writer.sheets['High Alerts']
+        
+        # Define color mappings (Excel color codes)
+        colors = {
+            'Watchlist': '26547D',    # Blue
+            'High Value': 'ef436b',    # Red
+            'Bed Cases': 'ffce5c',     # Yellow
+            'Family ID': '05c793',     # Green
+            'Geo Anomaly': '0091b9',   # Dark Blue
+            'Ophthalmology': '1abc9c'  # Teal
+        }
+
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Apply cell coloring
+        for col_idx, col_name in enumerate(df.columns, 1):
+            if col_name in colors:
+                fill = PatternFill(
+                    start_color=colors[col_name],
+                    end_color=colors[col_name],
+                    fill_type='solid'
+                )
+                for row in worksheet.iter_rows(
+                    min_row=2,
+                    max_row=worksheet.max_row,
+                    min_col=col_idx,
+                    max_col=col_idx
+                ):
+                    for cell in row:
+                        if cell.value:  # Only color if True
+                            cell.fill = fill
+                            cell.border = thin_border
+                            cell.value = ''  # Optional: Clear boolean
+
+    buffer.seek(0)
+    response = HttpResponse(
+        buffer,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    filename = f"high_alerts_{today}_{'_'.join(districts) if districts else 'all'}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
 @login_required(login_url='login')
 def dashboard_view(request):
-    return render(request, 'dashboard.html') 
+    # capture the district GET-param so your JS can pick it up
+    district_param = request.GET.get('district', '')
+    return render(request, 'dashboard.html', {
+        'district_param': district_param,
+        'active_page': 'dashboard',
+    })
+
+@login_required(login_url='login')
+def high_alert_view(request):
+    district_param = request.GET.get('district', '')
+    return render(request, 'high_alert.html', {
+        'district_param': district_param,
+        'active_page': 'high_alert',
+    })

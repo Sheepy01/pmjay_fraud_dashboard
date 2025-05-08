@@ -1,0 +1,77 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PMJAY Fraud Detection Dashboard, Bihar{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/demo/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'css/demo/high_alert.css' %}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <script src="{% static 'js/lib/chart.min.js' %}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-bg-image"></div>
+      <div class="sidebar-inner">
+        <div class="sidebar-header">
+          <a href="{% url 'dashboard' %}" class="brand-logo">
+            <img src="{% static 'images/pmjaylogo.png' %}" alt="logo" style="width:90px">
+          </a>
+        </div>
+        <ul class="sidebar-menu">
+          <li class="{% if active_page == 'dashboard' %}active{% endif %}">
+            <a href="{% url 'dashboard' %}">
+              <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+            </a>
+          </li>
+          <li class="{% if active_page == 'high_alert' %}active{% endif %}">
+            <a href="{% url 'high_alerts' %}">
+              <i class="fas fa-exclamation-triangle"></i><span>High Alerts</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+      <div class="sidebar-footer">
+        <a href="{% url 'logout' %}" class="logout-btn">
+          <i class="fas fa-sign-out-alt"></i><span>Log Out</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Main content wrapper -->
+    <div class="main-content" id="main-content">
+      <header class="header">
+        <div class="header-left">
+          <button class="toggle-btn" id="toggle-btn">
+            <i class="fas fa-bars"></i>
+          </button>
+          <div class="header-title">
+            <h1>PMJAY FRAUD DETECTION DASHBOARD, BIHAR</h1>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+        {% block content %}
+        <!-- child templates will fill this -->
+        {% endblock %}
+      </div>
+    </div>
+  </div>
+
+  <!-- common libraries -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  {% block extra_js %}
+  <!-- child templates will load their page-specific JS here -->
+  {% endblock %}
+</body>
+</html>

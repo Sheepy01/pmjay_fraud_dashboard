@@ -6,14 +6,14 @@
   <style>
     /* First page */
     @page :first {
-      size: A4 portrait;
+      size: A4 landscape;
       margin: 5cm 1cm 1cm 1cm;
       @top-center    { content: element(firstHeader) }
       @bottom-center { content: "Page " counter(page) " of " counter(pages) }
     }
     /* Rest */
     @page {
-      size: A4 portrait;
+      size: A4 landscape;
       margin: 3cm 1cm 1cm 1cm;
       @top-center    { content: element(normalHeader) }
       @bottom-center { content: "Page " counter(page) " of " counter(pages) }
@@ -93,8 +93,16 @@
         <h3>Surgical High-Value Claims</h3>
         <table>
           <thead><tr>
-            <th>#</th><th>Claim ID</th><th>Patient</th><th>Hospital</th>
-            <th>District</th><th>Amount (₹)</th><th>Type</th>
+            <th>#</th>
+            <th>Claim ID</th>
+            <th>Patient</th>
+            <th>District</th>
+            <th>Preauth Initiated Date</th>
+            <th>Preauth Initiated Time</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
+            <th>Amount (₹)</th>
+            <th>Type</th>
           </tr></thead>
           <tbody>
             {% for row in surgical_rows %}
@@ -102,8 +110,11 @@
               <td>{{ row.serial_no }}</td>
               <td>{{ row.claim_id }}</td>
               <td>{{ row.patient_name }}</td>
-              <td>{{ row.hospital_name }}</td>
               <td>{{ row.district_name }}</td>
+              <td>{{ row.preauth_initiated_date }}</td>
+              <td>{{ row.preauth_initiated_time }}</td>
+              <td>{{ row.hospital_id }}</td>
+              <td>{{ row.hospital_name }}</td>
               <td>{{ row.amount }}</td>
               <td background:rgb(223, 0, 85); >{{ row.case_type }}</td>
             </tr>
@@ -131,8 +142,16 @@
         <h3>Medical High-Value Claims</h3>
         <table>
           <thead><tr>
-            <th>#</th><th>Claim ID</th><th>Patient</th><th>Hospital</th>
-            <th>District</th><th>Amount (₹)</th><th>Type</th>
+            <th>#</th>
+            <th>Claim ID</th>
+            <th>Patient</th>
+            <th>District</th>
+            <th>Preauth Initiated Date</th>
+            <th>Preauth Initiated Time</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
+            <th>Amount (₹)</th>
+            <th>Type</th>
           </tr></thead>
           <tbody>
             {% for row in medical_rows %}
@@ -140,10 +159,13 @@
               <td>{{ row.serial_no }}</td>
               <td>{{ row.claim_id }}</td>
               <td>{{ row.patient_name }}</td>
-              <td>{{ row.hospital_name }}</td>
               <td>{{ row.district_name }}</td>
+              <td>{{ row.preauth_initiated_date }}</td>
+              <td>{{ row.preauth_initiated_time }}</td>
+              <td>{{ row.hospital_id }}</td>
+              <td>{{ row.hospital_name }}</td>
               <td>{{ row.amount }}</td>
-              <td>{{ row.case_type }}</td>
+              <td background:rgb(0, 82, 223); >{{ row.case_type }}</td>
             </tr>
             {% endfor %}
           </tbody>

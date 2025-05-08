@@ -56,9 +56,16 @@
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Claim ID</th><th>Patient</th>
-            <th>Hospital</th><th>District</th>
-            <th>Patient State</th><th>Hospital State</th>
+            <th>#</th>
+            <th>Claim ID</th>
+            <th>Patient</th>
+            <th>District</th>
+            <th>Preauth Initiated Date</th>
+            <th>Preauth Initiated Time</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
+            <th>Patient State</th>
+            <th>Hospital State</th>
           </tr>
         </thead>
         <tbody>
@@ -67,8 +74,11 @@
             <td>{{ r.serial_no }}</td>
             <td>{{ r.claim_id }}</td>
             <td>{{ r.patient_name }}</td>
-            <td>{{ r.hospital_name }}</td>
             <td>{{ r.district }}</td>
+            <td>{{ r.preauth_initiated_date }}</td>
+            <td>{{ r.preauth_initiated_time }}</td>
+            <td>{{ r.hospital_id }}</td>
+            <td>{{ r.hospital_name }}</td>
             <td>{{ r.patient_state }}</td>
             <td>{{ r.hospital_state }}</td>
           </tr>

@@ -22,8 +22,16 @@
     header .date { text-align:center; font-size:10px }
     header hr { border:none; border-bottom:1px solid #333; margin:5px 0 }
     .district-line { text-align:center; font-size:10px; margin:4px 0 8px }
-    table { width:100%; border-collapse:collapse; margin-bottom:1em; font-size:11px }
-    th,td { border:1px solid #ccc; padding:6px; text-align:left }
+    table { width:100%; border-collapse:collapse; margin-bottom:1em; font-size:10px; table-layout: fixed }
+    th,td { 
+      border:1px solid #ccc; padding:6px; text-align:left; word-wrap: break-word; white-space: normal 
+    }
+    table th:first-child,
+    table td:first-child {
+      width: 30px;
+      max-width: 30px;
+      text-align: center;
+    }
     thead { background:rgb(82, 90, 130); color:#fff }
     tbody tr:nth-child(even) { background:#fafafa }
     .chart-section { page-break-before: always; margin-top:1em }
@@ -59,8 +67,15 @@
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Family ID</th><th>Claim ID</th>
-            <th>Patient</th><th>District</th><th>Hospital</th>
+            <th>#</th>
+            <th>Family ID</th>
+            <th>Claim ID</th>
+            <th>Patient</th>
+            <th>District</th>
+            <th>Preauth Initiated Date</th>
+            <th>Preauth Initiated Time</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
           </tr>
         </thead>
         <tbody>
@@ -71,7 +86,10 @@
             <td>{{ r.claim_id }}</td>
             <td>{{ r.patient_name }}</td>
             <td>{{ r.district }}</td>
-            <td>{{ r.hospital }}</td>
+            <td>{{ r.preauth_initiated_date }}</td>
+            <td>{{ r.preauth_initiated_time }}</td>
+            <td>{{ r.hospital_id }}</td>
+            <td>{{ r.hospital_name }}</td>
           </tr>
           {% endfor %}
         </tbody>

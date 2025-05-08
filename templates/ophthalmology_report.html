@@ -22,8 +22,14 @@
     header .date { text-align:center; font-size:10px }
     header hr    { border:none; border-bottom:1px solid #333; margin:5px 0 }
     .district-line { text-align:center; font-size:10px; margin:4px 0 8px }
-    table { width:100%; border-collapse:collapse; margin-bottom:1em; font-size:11px }
-    th,td { border:1px solid #ccc; padding:6px; text-align:left }
+    table { width:100%; border-collapse:collapse; margin-bottom:1em; font-size:11px; table-layout: fixed; word-wrap: break-word }
+    th,td { border:1px solid #ccc; padding:6px; text-align:left; word-wrap: break-word; white-space: normal }
+    table th:first-child,
+    table td:first-child {
+      width: 30px;
+      max-width: 30px;
+      text-align: center;
+    }
     td.age-true      { background: #FFEB3B; }  /* yellow */
     td.ot-true       { background: #E91E63; }  /* magenta */
     td.preauth-true  { background: #009688; }  /* teal */
@@ -63,8 +69,9 @@
             <th>#</th>
             <th>Claim ID</th>
             <th>Patient</th>
-            <th>Hospital</th>
             <th>District</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
             <th>Amount (₹)</th>
             <th>Age < 40</th>
             <th>OT Cases</th>
@@ -76,17 +83,18 @@
               <td>{{ r.serial_no }}</td>
               <td>{{ r.claim_id }}</td>
               <td>{{ r.patient_name }}</td>
-              <td>{{ r.hospital_name }}</td>
               <td>{{ r.district }}</td>
+              <td>{{ r.hospital_id }}</td>
+              <td>{{ r.hospital_name }}</td>
               <td>{{ r.amount }}</td>
               <td class="{% if r.age_lt_40 %}age-true{% endif %}">
-                {{ r.age_lt_40|yesno:"Yes,No" }}
+                {{ r.age_lt_40|yesno:"True,False" }}
               </td>
               <td class="{% if r.ot_cases %}ot-true{% endif %}">
-                {{ r.ot_cases|yesno:"Yes,No" }}
+                {{ r.ot_cases|yesno:"True,False" }}
               </td>
               <td class="{% if r.preauth_time %}preauth-true{% endif %}">
-                {{ r.preauth_time|yesno:"Yes,No" }}
+                {{ r.preauth_time|yesno:"True,False" }}
               </td>
             </tr>
             {% endfor %}
@@ -115,8 +123,9 @@
             <th>#</th>
             <th>Claim ID</th>
             <th>Patient</th>
-            <th>Hospital</th>
             <th>District</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
             <th>Amount (₹)</th>
             <th>Age < 40</th>
             <th>OT Cases</th>
@@ -128,17 +137,18 @@
               <td>{{ r.serial_no }}</td>
               <td>{{ r.claim_id }}</td>
               <td>{{ r.patient_name }}</td>
-              <td>{{ r.hospital_name }}</td>
               <td>{{ r.district }}</td>
+              <td>{{ r.hospital_id }}</td>
+              <td>{{ r.hospital_name }}</td>
               <td>{{ r.amount }}</td>
               <td class="{% if r.age_lt_40 %}age-true{% endif %}">
-                {{ r.age_lt_40|yesno:"Yes,No" }}
+                {{ r.age_lt_40|yesno:"True,False" }}
               </td>
               <td class="{% if r.ot_cases %}ot-true{% endif %}">
-                {{ r.ot_cases|yesno:"Yes,No" }}
+                {{ r.ot_cases|yesno:"True,False" }}
               </td>
               <td class="{% if r.preauth_time %}preauth-true{% endif %}">
-                {{ r.preauth_time|yesno:"Yes,No" }}
+                {{ r.preauth_time|yesno:"True,False" }}
               </td>
             </tr>
             {% endfor %}
@@ -167,8 +177,9 @@
             <th>#</th>
             <th>Claim ID</th>
             <th>Patient</th>
-            <th>Hospital</th>
             <th>District</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
             <th>Amount (₹)</th>
             <th>Age < 40</th>
             <th>OT Cases</th>
@@ -180,17 +191,18 @@
               <td>{{ r.serial_no }}</td>
               <td>{{ r.claim_id }}</td>
               <td>{{ r.patient_name }}</td>
-              <td>{{ r.hospital_name }}</td>
               <td>{{ r.district }}</td>
+              <td>{{ r.hospital_id }}</td>
+              <td>{{ r.hospital_name }}</td>
               <td>{{ r.amount }}</td>
               <td class="{% if r.age_lt_40 %}age-true{% endif %}">
-                {{ r.age_lt_40|yesno:"Yes,No" }}
+                {{ r.age_lt_40|yesno:"True,False" }}
               </td>
               <td class="{% if r.ot_cases %}ot-true{% endif %}">
-                {{ r.ot_cases|yesno:"Yes,No" }}
+                {{ r.ot_cases|yesno:"True,False" }}
               </td>
               <td class="{% if r.preauth_time %}preauth-true{% endif %}">
-                {{ r.preauth_time|yesno:"Yes,No" }}
+                {{ r.preauth_time|yesno:"True,False" }}
               </td>
             </tr>
             {% endfor %}
@@ -219,8 +231,9 @@
             <th>#</th>
             <th>Claim ID</th>
             <th>Patient</th>
-            <th>Hospital</th>
             <th>District</th>
+            <th>Hospital ID</th>
+            <th>Hospital Name</th>
             <th>Amount (₹)</th>
             <th>Age < 40</th>
             <th>OT Cases</th>
@@ -232,17 +245,18 @@
               <td>{{ r.serial_no }}</td>
               <td>{{ r.claim_id }}</td>
               <td>{{ r.patient_name }}</td>
-              <td>{{ r.hospital_name }}</td>
               <td>{{ r.district }}</td>
+              <td>{{ r.hospital_id }}</td>
+              <td>{{ r.hospital_name }}</td>
               <td>{{ r.amount }}</td>
               <td class="{% if r.age_lt_40 %}age-true{% endif %}">
-                {{ r.age_lt_40|yesno:"Yes,No" }}
+                {{ r.age_lt_40|yesno:"True,False" }}
               </td>
               <td class="{% if r.ot_cases %}ot-true{% endif %}">
-                {{ r.ot_cases|yesno:"Yes,No" }}
+                {{ r.ot_cases|yesno:"True,False" }}
               </td>
               <td class="{% if r.preauth_time %}preauth-true{% endif %}">
-                {{ r.preauth_time|yesno:"Yes,No" }}
+                {{ r.preauth_time|yesno:"True,False" }}
               </td>
             </tr>
             {% endfor %}

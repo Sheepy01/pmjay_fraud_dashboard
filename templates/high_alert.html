@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}High Alerts – PMJAY Fraud Detection{% endblock %}
+
+{% block content %}
+    <div class="generated-on">
+        <h5>
+        Generated on: 
+        <span id="generatedOn">
+            <span class="gen-date"></span><span class="gen-separator">, </span><span class="gen-time"></span>
+        </span>
+        </h5>
+    </div>
+
+    <div class="district-filter">
+        <div class="dropdown-container">
+            <!-- Visible trigger (div instead of select) -->
+            <div class="dropdown-trigger">
+                <span class="selected-value">All Districts</span>
+                <i class="fas fa-chevron-down dropdown-icon"></i>
+            </div>
+            
+            <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
+            <select id="districtDropdown" class="hidden-select" multiple>
+                <option value="">All Districts</option>
+            </select>
+            
+            <!-- Custom dropdown content -->
+            <div class="dropdown-content">
+                <div class="search-box">
+                    <input type="text" placeholder="Search districts..." class="search-input">
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+                <div class="dropdown-options">
+                    <!-- This will be populated by JavaScript -->
+                    <div class="option-item all-districts">
+                        <input type="checkbox" id="selectAll" class="district-checkbox">
+                        <label for="selectAll">All Districts</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% comment %} <a href="{% url 'download_high_alerts' %}" class="export-btn" id="exportExcel">
+        <i class="fas fa-file-excel"></i> Export Excel
+    </a> {% endcomment %}
+    <div class="export-buttons">
+        <button class="export-btn" id="exportExcel">
+            <i class="fas fa-file-excel"></i> Export Excel
+        </button>
+        <button class="export-btn" id="exportPdf">
+            <i class="fas fa-file-pdf"></i> Export PDF
+        </button>
+    </div>
+    <!-- High Alert Table -->
+    <div class="table-container">
+        <table id="highAlertTable" class="styled-table">
+            <thead>
+                <tr>
+                    <th>Serial No</th>
+                    <th>Claim ID</th>
+                    <th>Patient Name</th>
+                    <th>Hospital ID</th>
+                    <th>Hospital Name</th>
+                    <th>District</th>
+                    <th>Preauth Initiated Date</th>
+                    <th>Preauth Initiated Time</th>
+                    <th>Patient Admitted in Watchlist Hospitals</th>
+                    <th>High Value Claims</th>
+                    <th>Hospital Bed Violation</th>
+                    <th>Family ID Violation</th>
+                    <th>Geo Anomaly</th>
+                    <th>Ophthalmology</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="pagination-controls"></div>
+    </div>
+    <div class="chart-container">
+        <h4>District-wise High Alert Distribution</h4>
+        <canvas id="districtChart"></canvas>
+    </div>
+    <div class="demographics-container">
+        <div class="demographics-chart">
+            <div class="chart-card">
+                <h5>Age Distribution</h5>
+                <canvas id="ageChart"></canvas>
+            </div>
+        </div>
+        <div class="demographics-chart">
+            <div class="chart-card">
+                <h5>Gender Distribution</h5>
+                <canvas id="genderChart"></canvas>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/demo/high_alert.css' %}">
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        window.HIGH_ALERT_URLS = {
+            districts: "{% url 'high_alert_districts' %}",
+            demographics: "{% url 'high_alert_demographics' 'type' %}"
+        };
+    </script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <script src="{% static 'js/high_alert.js' %}"></script>
+{% endblock %}

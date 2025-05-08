@@ -1,0 +1,153 @@
+
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 25px 0;
+    font-size: 0.9em;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.styled-table thead tr {
+    background-color: #009879;
+    color: #ffffff;
+    text-align: left;
+}
+
+.styled-table th,
+.styled-table td {
+    padding: 12px 15px;
+}
+
+.styled-table tbody tr {
+    border-bottom: 1px solid #dddddd;
+}
+
+.styled-table tbody tr:nth-of-type(even) {
+    background-color: #f3f3f3;
+}
+
+.styled-table tbody tr:last-of-type {
+    border-bottom: 2px solid #009879;
+}
+
+.checkmark {
+    text-align: center;
+    color: #28a745;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.export-btn {
+    background: #1f6b2c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    float: right;
+}
+
+.pagination-controls {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.page-btn {
+    padding: 5px 10px;
+    margin: 0 5px;
+}
+
+#highAlertTable thead th:nth-child(9) {
+    background-color: #26547D; 
+    color: #ececec;
+}
+
+#highAlertTable thead th:nth-child(10) {
+    background-color: #ef436b;
+    color: #ececec;
+}
+
+#highAlertTable thead th:nth-child(11) {
+    background-color: #ffce5c;
+    color: #1f1f1f;
+}
+
+#highAlertTable thead th:nth-child(12) {
+    background-color: #05c793;
+    color: #1f1f1f;
+}
+
+#highAlertTable thead th:nth-child(13) {
+    background-color: #0091b9;
+    color: #ececec; 
+}
+
+#highAlertTable thead th:nth-child(14) {
+    background-color: #1abc9c;
+    color: #1f1f1f; 
+}
+
+#highAlertTable {
+    border-collapse: collapse; /* Ensures borders don't double */
+    width: 100%; /* Optional: make table full width */
+}
+
+#highAlertTable th, 
+#highAlertTable td {
+    border: 1px solid #ccc; /* Light gray border */
+    padding: 8px; /* Optional: adds spacing inside cells */
+    text-align: left; /* Optional: aligns text */
+}
+
+/* high_alert.css */
+.chart-container {
+    position: relative; 
+    height: 60vh;  /* Viewport-relative height */
+    min-height: 500px;  /* Minimum height */
+    max-height: 800px;  /* Maximum height */
+    width: 100%;
+    overflow: hidden;  /* Prevent overflow */
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart-container h4 {
+    margin-bottom: 1.5rem;
+    color: #26547D;
+    font-weight: 600;
+}
+
+/* Pie/Doughnut Charts */
+.demographics-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.chart-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+    height: 100%;
+}
+
+.chart-card h5 {
+    color: #26547D;
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+}
+
+.chart-card canvas {
+    max-height: 350px;
+    width: 100%!important;
+}
