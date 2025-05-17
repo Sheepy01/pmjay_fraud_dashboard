@@ -148,7 +148,7 @@ body {
 
 .sidebar-footer {
     padding: 20px;
-    padding-top: 520px;
+    padding-top: 480px;
     margin-top: auto;
 }
 
@@ -1706,3 +1706,9 @@ white-space: nowrap;
     color: white;
     font-weight: bold;
 } 
+
+.violation-type-btn.active {
+    background-color: #444 !important;
+    color: #fff;
+  }
+  

@@ -554,8 +554,11 @@ $(document).ready(function() {
                                 <th>#</th>
                                 <th>Claim ID</th>
                                 <th>Patient</th>
-                                <th>Hospital</th>
                                 <th>District</th>
+                                <th>Preauth Initiated Date</th>
+                                <th>Preauth Initiated Time</th>
+                                <th>Hospital ID</th>
+                                <th>Hospital</th>
                                 <th>Amount (₹)</th>
                                 <th>Status</th>
                             </tr>
@@ -647,8 +650,11 @@ $(document).ready(function() {
                             <td>${item.serial_no}</td>
                             <td>${item.claim_id}</td>
                             <td>${item.patient_name}</td>
-                            <td>${item.hospital_name}</td>
                             <td>${item.district_name}</td>
+                            <td>${item.preauth_initiated_date}</td>
+                            <td>${item.preauth_initiated_time}</td>
+                            <td>${item.hospital_id}</td>
+                            <td>${item.hospital_name}</td>
                             <td>₹${item.amount.toLocaleString('en-IN')}</td>
                             <td><span class="status-badge ${item.reason === 'Suspicious hospital' ? 'danger' : 'warning'}">
                                 ${item.reason}
@@ -752,10 +758,12 @@ $(document).ready(function() {
                 
                 const ctx = canvas.getContext('2d');
                 
-                // Destroy existing chart
-                // if (window.flaggedClaimsChart) {
-                //     window.flaggedClaimsChart.destroy();
-                // }
+                if (
+                    window.flaggedClaimsChart &&
+                    typeof window.flaggedClaimsChart.destroy === 'function'
+                ) {
+                    window.flaggedClaimsChart.destroy();
+                }
                 
                 window.flaggedClaimsChart = new Chart(ctx, {
                     type: 'bar',
@@ -815,10 +823,12 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
                 
-                // Destroy existing chart
-                // if (window[canvasId]) {
-                //     window[canvasId].destroy();
-                // }
+                if (
+                    window[canvasId] &&
+                    typeof window[canvasId].destroy === 'function'
+                ) {
+                    window[canvasId].destroy();
+                }
                 
                 window[canvasId] = new Chart(ctx, {
                     type: 'doughnut',
@@ -898,8 +908,11 @@ $(document).ready(function() {
                                 <th>#</th>
                                 <th>Claim ID</th>
                                 <th>Patient</th>
-                                <th>Hospital</th>
                                 <th>District</th>
+                                <th>Preauth Inititated Date</th>
+                                <th>Preauth Inititated Time</th>
+                                <th>Hospital ID</th>
+                                <th>Hospital Name</th>
                                 <th>Amount (₹)</th>
                                 <th>Type</th>
                             </tr>
@@ -1033,8 +1046,11 @@ $(document).ready(function() {
                                 <td>${item.serial_no}</td>
                                 <td>${item.claim_id}</td>
                                 <td>${item.patient_name}</td>
-                                <td>${item.hospital_name}</td>
                                 <td>${item.district_name}</td>
+                                <td>${item.preauth_initiated_date}</td>
+                                <td>${item.preauth_initiated_time}</td>
+                                <td>${item.hospital_id}</td>
+                                <td>${item.hospital_name}</td>
                                 <td>₹${item.amount.toLocaleString('en-IN')}</td>
                                 <td class="case-type-${item.case_type.toLowerCase()}">${item.case_type}</td>
                             </tr>
@@ -1560,7 +1576,10 @@ $(document).ready(function() {
                                 <th>Claim ID</th>
                                 <th>Patient</th>
                                 <th>District</th>
-                                <th>Hospital</th>
+                                <th>Preauth Initiated Date</th>
+                                <th>Preauth Initiated Time</th>
+                                <th>Hospital ID</th>
+                                <th>Hospital Name</th>
                             </tr>
                         </thead>
                         <tbody id="familyCasesData"></tbody>
@@ -1640,6 +1659,9 @@ $(document).ready(function() {
                                     <td>${item.claim_id}</td>
                                     <td>${item.patient_name}</td>
                                     <td>${item.district_name}</td>
+                                    <td>${item.preauth_initiated_date}</td>
+                                    <td>${item.preauth_initiated_time}</td>
+                                    <td>${item.hospital_id}</td>
                                     <td>${item.hospital_name}</td>
                                 </tr>
                             `;
@@ -1865,8 +1887,11 @@ $(document).ready(function() {
                                 <th>#</th>
                                 <th>Claim ID</th>
                                 <th>Patient</th>
-                                <th>Hospital</th>
                                 <th>District</th>
+                                <th>Preauth Initiated Date</th>
+                                <th>Preauth Initiated Time</th>
+                                <th>Hospital ID</th>
+                                <th>Hospital Name</th>
                                 <th>Patient State</th>
                                 <th>Hospital State</th>
                             </tr>
@@ -1943,8 +1968,11 @@ $(document).ready(function() {
                                 <td>${item.serial_no}</td>
                                 <td>${item.claim_id}</td>
                                 <td>${item.patient_name}</td>
-                                <td>${item.hospital_name}</td>
                                 <td>${item.district_name}</td>
+                                <td>${item.preauth_initiated_date}</td>
+                                <td>${item.preauth_initiated_time}</td>
+                                <td>${item.hospital_id}</td>
+                                <td>${item.hospital_name}</td>
                                 <td>${item.patient_state}</td>
                                 <td>${item.hospital_state}</td>
                             </tr>
@@ -2147,6 +2175,7 @@ $(document).ready(function() {
                     <button class="violation-type-btn" data-type="age">Age <40</button>
                     <button class="violation-type-btn" data-type="ot">OT Cases</button>
                     <button class="violation-type-btn" data-type="preauth">Pre-auth Time</button>
+                    <button class="violation-type-btn" data-type="multiple">More than one</button>
                 </div>
                 
                 <div class="data-table-container">
@@ -2185,7 +2214,8 @@ $(document).ready(function() {
                 age: '#FFEB3B',
                 ot: '#E91E63',
                 preauth: '#009688',
-                all: '#9C27B0'
+                all: '#9C27B0',
+                multiple: '#607D8B'
             },
             postRender: function(districts) {
                 this.initPagination(districts);
@@ -2310,10 +2340,11 @@ $(document).ready(function() {
             },
             updateTableHeader: function(violationType) {
                 const headers = {
-                    all: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Age<40', 'OT Cases', 'Pre-auth Time'],
-                    age: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Age<40'],
-                    ot: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'OT Cases'],
-                    preauth: ['#', 'Claim ID', 'Patient', 'Hospital', 'District', 'Amount', 'Pre-auth Time']
+                    all: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age<40', 'OT Cases', 'Pre-auth Time'],
+                    age: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age<40'],
+                    ot: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'OT Cases'],
+                    preauth: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Pre-auth Time'],
+                    multiple: ['#', 'Claim ID','Patient','Hospital ID','Hospital Name','District','Age<40','OT Cases','Pre-auth Time'],
                 };
 
                 const headerHTML = headers[violationType].map(h => `<th>${h}</th>`).join('');
@@ -2325,21 +2356,21 @@ $(document).ready(function() {
                         <td>${item.serial_no}</td>
                         <td>${item.claim_id}</td>
                         <td>${item.patient_name}</td>
+                        <td>${item.hospital_id}</td>
                         <td>${item.hospital_name}</td>
                         <td>${item.district_name}</td>
-                        <td>₹${item.amount?.toLocaleString('en-IN') || '0'}</td>
                     `;
 
                     let violationCols = '';
-                    if (violationType === 'all') {
+                    if (violationType === 'all' || violationType === 'multiple') {
                         violationCols = `
-                            <td class="${item.age_violation ? 'age-violation' : ''}">${item.age_violation ? 'Yes' : ''}</td>
-                            <td class="${item.ot_violation ? 'ot-violation' : ''}">${item.ot_violation ? 'Yes' : ''}</td>
-                            <td class="${item.preauth_violation ? 'preauth-violation' : ''}">${item.preauth_violation ? 'Yes' : ''}</td>
+                            <td class="${item.age_violation ? 'age-violation' : ''}">${item.age_violation ? 'TRUE' : 'FALSE'}</td>
+                            <td class="${item.ot_violation ? 'ot-violation' : ''}">${item.ot_violation ? 'TRUE' : 'FALSE'}</td>
+                            <td class="${item.preauth_violation ? 'preauth-violation' : ''}">${item.preauth_violation ? 'TRUE' : 'FALSE'}</td>
                         `;
                     } else {
                         const violationClass = `${violationType}-violation`;
-                        violationCols = `<td class="${violationClass}">Yes</td>`;
+                        violationCols = `<td class="${violationClass}">TRUE</td>`;
                     }
 
                     return `<tr>${baseCols}${violationCols}</tr>`;
@@ -2674,30 +2705,6 @@ $(document).ready(function() {
                 );
             }
         },
-        // 'age': {
-        //     title: "Age Analysis",
-        //     content: `<div class="card-details">
-        //                 <h4>Patient Age Distribution</h4>
-        //                 <div class="age-metrics">
-        //                     <div class="metric">
-        //                         <span>Under 40:</span>
-        //                         <span>64 cases</span>
-        //                     </div>
-        //                 </div>
-        //               </div>`
-        // },
-        // 'ot-cases': {
-        //     title: "OT Cases",
-        //     content: `<div class="card-details">
-        //                 <h4>Operation Theater Cases</h4>
-        //                 <div class="ot-metrics">
-        //                     <div class="metric">
-        //                         <span>This Month:</span>
-        //                         <span>183 cases</span>
-        //                     </div>
-        //                 </div>
-        //               </div>`
-        // }
     };
 
     function getCookie(name) {
@@ -3189,7 +3196,7 @@ $(document).ready(function() {
     }
     
     // Initialize on load
-    $(window).on('load', function() {
+    $(function() {
         $('#modalOverlay').hide().removeClass('show');
         ModalController.init();
     });

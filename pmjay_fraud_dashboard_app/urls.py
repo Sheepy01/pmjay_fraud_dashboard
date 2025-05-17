@@ -50,6 +50,8 @@ urlpatterns = [
     path('high-alert/', views.high_alert, name='high_alert'),
     path('high-alerts/districts/', views.high_alert_district_distribution, name='high_alert_districts'),
     path('high-alerts/demographics/<str:type>/', views.high_alert_demographics, name='high_alert_demographics'),
-    path('high-alerts/export/', views.download_high_alerts_excel, name='download_high_alerts'),
+    path('high-alerts/export-excel/', views.download_high_alerts_excel, name='download_high_alerts_excel'),
+    path('high-alerts/pdf-report/', views.download_high_alert_report, name='download_high_alert_report'),
+    path('import-data/', views.import_data_view, name='import_data'),
     # path('export-watchlist-heatmap/', views.patient_admitted_in_watchlist_hospitals_heatmap_data, name='export_watchlist_heatmap'),
 ]

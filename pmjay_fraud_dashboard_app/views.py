@@ -27,6 +27,9 @@ import datetime
 import random
 import re
 import io
+import os
+from django.contrib import messages
+from django.conf import settings
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -55,6 +58,93 @@ class Upper(Func):
     function = 'UPPER'
     template = '%(function)s(%(expressions)s)'
 
+@login_required
+def import_data_view(request):
+    if request.method == 'POST':
+        uploaded_files = request.FILES.getlist('files')
+        combined_path = os.path.join(settings.BASE_DIR, 'data', 'Combined_Last24Hours.xlsx')
+        
+        # Updated required columns based on your model
+        required_columns = [
+            'Registration Id', 
+            'Preauth Initiated Date',
+            'Preauth Initiated Time',
+            'Hospital Code',
+            'Claim Initiated Amount(Rs.)'
+        ]
+
+        try:
+            # Initialize combined dataframe
+            if os.path.exists(combined_path):
+                combined_df = pd.read_excel(combined_path, sheet_name='Dump', engine='openpyxl')
+            else:
+                combined_df = pd.DataFrame()
+
+            # Process each file
+            for uploaded_file in uploaded_files:
+                try:
+                    # Read from "Dump" sheet with header row
+                    df = pd.read_excel(
+                        uploaded_file,
+                        sheet_name='Dump',
+                        engine='openpyxl',
+                        header=0  # Header is in first row (adjust if needed)
+                    )
+                    
+                    # Clean column names
+                    df.columns = df.columns.str.strip()
+                    
+                    # Validate columns
+                    missing_cols = [col for col in required_columns if col not in df.columns]
+                    if missing_cols:
+                        messages.error(request, f"Skipped {uploaded_file.name}: Missing columns {', '.join(missing_cols)}")
+                        continue
+                    
+                    # Add to combined data
+                    combined_df = pd.concat([combined_df, df], ignore_index=True)
+                    
+                except Exception as e:
+                    messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
+                    continue
+
+            # Process combined data
+            if not combined_df.empty:
+                # Create datetime column
+                combined_df['preauth_datetime'] = pd.to_datetime(
+                    combined_df['Preauth Initiated Date'].astype(str) + ' ' +
+                    combined_df['Preauth Initiated Time'].astype(str),
+                    errors='coerce'
+                )
+                
+                # Remove invalid datetime entries
+                combined_df = combined_df.dropna(subset=['preauth_datetime'])
+                
+                # Deduplicate
+                combined_df = combined_df.sort_values('preauth_datetime')
+                combined_df = combined_df.drop_duplicates(
+                    subset=['Registration Id', 'preauth_datetime'],
+                    keep='last'
+                )
+
+                # Save to Excel
+                combined_df.to_excel(combined_path, 
+                                   sheet_name='Dump', 
+                                   index=False, 
+                                   engine='openpyxl')
+                
+                # Update database
+                from django.core.management import call_command
+                call_command('import_data')
+                
+                messages.success(request, f"Processed {len(combined_df)} records successfully!")
+            else:
+                messages.warning(request, "No valid data found in files")
+
+        except Exception as e:
+            messages.error(request, f"System error: {str(e)}")
+
+        return redirect('dashboard')
+
 def get_districts(request):
     districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
     district_list = [d for d in districts if d]  # Remove None/empty values
@@ -65,7 +155,7 @@ def get_flagged_claims(request):
     districts = district_param.split(',') if district_param else []
     
     # Get current date in the correct timezone
-    today = date(2025, 2, 5) #timezone.now().date()
+    today = date(2025, 2, 5) #date(2025, 2, 5)
     
     # Base queryset with today's filter
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
@@ -108,7 +198,7 @@ def get_flagged_claims_details(request):
     districts = district_param.split(',') if district_param else []
     
     # Get current date
-    today = date(2025, 2, 5)
+    today = date(2025, 2, 5) #date(2025, 2, 5)
     
     # Base query with today's filter
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
@@ -3577,6 +3667,156 @@ def download_high_alerts_excel(request):
     )
     filename = f"high_alerts_{today}_{'_'.join(districts) if districts else 'all'}.xlsx"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+from django.views.decorators.csrf import ensure_csrf_cookie
+@ensure_csrf_cookie
+@require_http_methods(["GET", "POST"])
+def download_high_alert_report(request):
+    # Get filters and chart data
+    district = request.POST.get('district', '')
+    districts = district.split(',') if district else []
+    
+    # Process chart images
+    def strip_prefix(data_url):
+        return data_url.split('base64,', 1)[1] if data_url else ''
+    
+    district_b64 = strip_prefix(request.POST.get('district_chart', ''))
+    age_b64 = strip_prefix(request.POST.get('age_chart', ''))
+    gender_b64 = strip_prefix(request.POST.get('gender_chart', ''))
+    
+    # Fetch all high alert cases
+    today = date(2025, 2, 5)
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=SuspiciousHospital.objects.values_list('hospital_id', flat=True)) &
+        Q(hospital_type='P') &
+        (Q(preauth_initiated_date__date=today) | Q(admission_date__date=today))
+    )
+    
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+    
+    # Annotate and filter
+    cases = base_query.annotate(
+        # Renamed annotations to avoid field conflicts
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date=today
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date=today
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        )
+    )
+
+    # Calculate total flags
+    filtered_cases = cases.annotate(
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2).order_by('-preauth_initiated_date')
+    # Prepare table data
+    table_rows = []
+    for idx, case in enumerate(cases, 1):
+        triggered_flags = []
+        if case.is_watchlist: triggered_flags.append("Watchlist Hospitals")
+        if case.is_high_value: triggered_flags.append("High Value Claims")
+        if case.is_hospital_bed: triggered_flags.append("Hospital Bed Violations")
+        if case.is_family_case: triggered_flags.append("Family ID Violations")
+        if case.is_geo_anomaly: triggered_flags.append("Geo Anomaly")
+        if case.is_ophtha_case: triggered_flags.append("Ophthalmology")
+        
+        table_rows.append({
+            'serial_no': idx,
+            'claim_id': case.registration_id or case.case_id,
+            'patient_name': case.patient_name or f"Patient {case.member_id}",
+            'hospital_name': case.hospital_name,
+            'district': case.district_name,
+            'triggered_flags': triggered_flags,
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
+            'preauth_initiated_time': case.preauth_initiated_time,
+        })
+    
+    # Render PDF
+    context = {
+        'logo_url': request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'report_districts': list(set([case['district'] for case in table_rows if case['district']])),
+        'table_rows': table_rows,
+        'district_b64': district_b64,
+        'age_b64': age_b64,
+        'gender_b64': gender_b64,
+        'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    html = render_to_string('high_alert_report.html', context)
+    pdf = HTML(string=html, base_url=request.build_absolute_uri('/')).write_pdf()
+    
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="high_alert_report.pdf"'
     return response
 
 @login_required(login_url='login')

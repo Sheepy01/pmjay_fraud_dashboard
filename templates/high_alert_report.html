@@ -1,0 +1,132 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @page :first {
+            size: A4 portrait;
+          - margin: 5cm 1cm 1cm 1cm;    
+            @top-center    { content: element(firstHeader) }
+            @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+          }
+
+        @page {
+            size: A4 portrait;
+            margin: 3cm 1cm 1cm 1cm;
+            @top-center    { content: element(normalHeader) }
+            @bottom-center { content: "Page " counter(page) " of " counter(pages) }
+        }
+        /* Running elements */
+        #firstHeader { position: running(firstHeader) }
+        #normalHeader { position: running(normalHeader) }
+    
+        /* Ensure table header repeats */
+        thead { display: table-header-group; }
+    
+        /* Table beautification */
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 1em;
+          font-size: 11px;
+        }
+        thead {
+          background-color:rgb(82, 90, 130);
+        }
+        th {
+          border: 1px solid #ccc;
+          padding: 6px;
+          text-align: left;
+          color: white
+        } 
+        td {
+          border: 1px solid #ccc;
+          padding: 6px;
+          text-align: left;
+        }
+        tbody tr:nth-child(even) {
+          background: #fafafa;
+        }
+    
+        /* Chart sections start on new page */
+        .chart-section {
+          page-break-before: always;
+          margin-top: 1em;
+        }
+        .chart-section img {
+          display: block;
+          margin: 0 auto 0.5em;
+          max-width: 100%;
+          height: auto;
+        }
+        .callouts {
+          padding: 20px; 
+          font-size: 20px;
+          margin: 0 auto 1em;
+          width: 80%;
+        }
+
+        .district-line {
+          text-align: center;
+          font-size: 10px;
+          margin: 4px 0 8px;
+        }
+    </style>
+</head>
+<body>
+    {% csrf_token %}
+    <header id="firstHeader">
+        <img src="{{ logo_url }}" style="max-height:40px; width:auto; float:left; margin-right:10px;" alt="Logo"/>
+        <h2 style="text-align:center; line-height:40px; margin:0;">High Alert Cases Report</h2>
+        <div class="district-line">
+            District: {% if report_districts %}{{ report_districts|join:", " }}{% else %}All{% endif %}
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <h3>High Alert Cases</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Claim ID</th>
+                        <th>Patient</th>
+                        <th>Hospital</th>
+                        <th>District</th>
+                        <th>Flags Triggered</th>
+                        <th>Preauth Date</th>
+                        <th>Preauth Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                    <tr>
+                        <td>{{ row.serial_no }}</td>
+                        <td>{{ row.claim_id }}</td>
+                        <td>{{ row.patient_name }}</td>
+                        <td>{{ row.hospital_name }}</td>
+                        <td>{{ row.district }}</td>
+                        <td>{{ row.triggered_flags|join:", " }}</td>
+                        <td>{{ row.preauth_initiated_date }}</td>
+                        <td>{{ row.preauth_initiated_time }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="chart-section">
+            <h3>District Distribution</h3>
+            {% if district_b64 %}<img src="data:image/png;base64,{{ district_b64 }}" alt="">{% endif %}
+            
+            <h3>Age Distribution</h3>
+            {% if age_b64 %}<img src="data:image/png;base64,{{ age_b64 }}" alt="">{% endif %}
+            
+            <h3>Gender Distribution</h3>
+            {% if gender_b64 %}<img src="data:image/png;base64,{{ gender_b64 }}" alt="">{% endif %}
+        </section>
+    </main>
+</body>
+</html>

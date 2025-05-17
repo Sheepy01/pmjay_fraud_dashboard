@@ -7,12 +7,15 @@
   <title>{% block title %}PMJAY Fraud Detection Dashboard, Bihar{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/demo/styles.css' %}">
   <link rel="stylesheet" href="{% static 'css/demo/high_alert.css' %}">
+  <link rel="stylesheet" href="{% static 'css/demo/import.css' %}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <script src="{% static 'js/lib/chart.min.js' %}"></script>
+  {% comment %} <script src="{% static 'js/import.js' %}" defer></script> {% endcomment %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   {% block head_extra %}{% endblock %}
 </head>
 <body>
+  {% csrf_token %}
   <div class="container">
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
@@ -54,6 +57,38 @@
             <h1>PMJAY FRAUD DETECTION DASHBOARD, BIHAR</h1>
           </div>
         </div>
+        <div class="header-right">
+          <button id="import-btn" class="btn-glow">
+            <i class="fas fa-cloud-upload-alt"></i> Import Data
+          </button> 
+          <div class="district-filter">
+            <div class="dropdown-container">
+              <div class="dropdown-trigger">
+                <span class="selected-value">All Districts</span>
+                <i class="fas fa-chevron-down dropdown-icon"></i>
+              </div>
+              
+              <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
+              <select id="districtDropdown" class="hidden-select" multiple>
+                <option value="">All Districts</option>
+              </select>
+              
+              <!-- Custom dropdown content -->
+              <div class="dropdown-content">
+                <div class="search-box">
+                  <input type="text" placeholder="Search districts..." class="search-input">
+                  <i class="fas fa-search search-icon"></i>
+                </div>
+                <div class="dropdown-options">
+                  <div class="option-item all-districts">
+                    <input type="checkbox" id="selectAll" class="district-checkbox">
+                    <label for="selectAll">All Districts</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </header>
 
       <div class="content">
@@ -64,8 +99,58 @@
     </div>
   </div>
 
+  <!-- Modals -->
+  <div id="importModal" class="modal fade-in">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title"><i class="fas fa-file-import"></i> Upload Patient Reports</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="upload-container">
+            <input type="file" id="fileInput" multiple accept=".xlsx,.xls" hidden>
+            <div class="drop-zone" id="dropZone">
+              <i class="fas fa-cloud-upload-alt fa-3x"></i>
+              <p>Drag & Drop files here<br>or</p>
+              <button class="browse-btn">Browse Files</button>
+            </div>
+            <div id="fileList" class="file-list"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-process" id="processBtn" disabled>
+            <i class="fas fa-cogs"></i> Process Files
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="progressModal" class="modal fade-in">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-body text-center">
+          <div class="loader">
+            <i class="fas fa-sync fa-2x"></i>
+          </div>
+          <h4>Processing Files</h4>
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill"></div>
+            </div>
+            <div class="progress-text">0%</div>
+          </div>
+          <p class="status-text">Initializing...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- common libraries -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="{% static 'js/import.js' %}" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>

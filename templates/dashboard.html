@@ -13,35 +13,6 @@
         </h5>
     </div>
 
-    <div class="district-filter">
-        <div class="dropdown-container">
-            <!-- Visible trigger (div instead of select) -->
-            <div class="dropdown-trigger">
-                <span class="selected-value">All Districts</span>
-                <i class="fas fa-chevron-down dropdown-icon"></i>
-            </div>
-            
-            <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
-            <select id="districtDropdown" class="hidden-select" multiple>
-                <option value="">All Districts</option>
-            </select>
-            
-            <!-- Custom dropdown content -->
-            <div class="dropdown-content">
-                <div class="search-box">
-                    <input type="text" placeholder="Search districts..." class="search-input">
-                    <i class="fas fa-search search-icon"></i>
-                </div>
-                <div class="dropdown-options">
-                    <!-- This will be populated by JavaScript -->
-                    <div class="option-item all-districts">
-                        <input type="checkbox" id="selectAll" class="district-checkbox">
-                        <label for="selectAll">All Districts</label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
     <div class="dashboard-cards">
         <!-- Column 1 -->
         <div class="card-column main-column">

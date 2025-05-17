@@ -13,43 +13,12 @@
         </h5>
     </div>
 
-    <div class="district-filter">
-        <div class="dropdown-container">
-            <!-- Visible trigger (div instead of select) -->
-            <div class="dropdown-trigger">
-                <span class="selected-value">All Districts</span>
-                <i class="fas fa-chevron-down dropdown-icon"></i>
-            </div>
-            
-            <!-- Hidden select for form submission (we'll keep this but modify JS to handle it) -->
-            <select id="districtDropdown" class="hidden-select" multiple>
-                <option value="">All Districts</option>
-            </select>
-            
-            <!-- Custom dropdown content -->
-            <div class="dropdown-content">
-                <div class="search-box">
-                    <input type="text" placeholder="Search districts..." class="search-input">
-                    <i class="fas fa-search search-icon"></i>
-                </div>
-                <div class="dropdown-options">
-                    <!-- This will be populated by JavaScript -->
-                    <div class="option-item all-districts">
-                        <input type="checkbox" id="selectAll" class="district-checkbox">
-                        <label for="selectAll">All Districts</label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% comment %} <a href="{% url 'download_high_alerts' %}" class="export-btn" id="exportExcel">
-        <i class="fas fa-file-excel"></i> Export Excel
-    </a> {% endcomment %}
+
     <div class="export-buttons">
-        <button class="export-btn" id="exportExcel">
+        <button class="export-btn-excel" id="exportExcel">
             <i class="fas fa-file-excel"></i> Export Excel
         </button>
-        <button class="export-btn" id="exportPdf">
+        <button class="export-btn-pdf" id="exportPdf">
             <i class="fas fa-file-pdf"></i> Export PDF
         </button>
     </div>
@@ -96,6 +65,16 @@
             </div>
         </div>
     </div>
+    <div id="pdfLoader" class="loader-modal">
+        <div class="loader-content">
+            <div class="loader-spinner"></div>
+            <div class="progress-container">
+                <div id="pdfProgressBar" class="progress-bar"></div>
+                <span id="pdfProgressText" class="progress-text">0%</span>
+            </div>
+            <p>Generating PDF report...</p>
+        </div>
+    </div>
 {% endblock %}
 
 {% block extra_css %}
@@ -106,7 +85,9 @@
     <script>
         window.HIGH_ALERT_URLS = {
             districts: "{% url 'high_alert_districts' %}",
-            demographics: "{% url 'high_alert_demographics' 'type' %}"
+            demographics: "{% url 'high_alert_demographics' 'type' %}",
+            excel: "{% url 'download_high_alerts_excel' %}",
+            pdf: "{% url 'download_high_alert_report' %}"
         };
     </script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
