@@ -1,0 +1,74 @@
+.data-management-container {
+  padding: 20px;
+}
+
+.upload-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 2rem;
+  margin-top: 20px;
+}
+
+.upload-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+  padding: 20px;
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-card h3 {
+  margin-bottom: 1.5rem;
+  color: #2c3e50;
+}
+
+.file-info {
+  margin-top: auto;
+}
+
+.file-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.file-name {
+  display: block;
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.progress-container {
+  height: 4px;
+  background: #ecf0f1;
+  border-radius: 2px;
+  margin-top: 1rem;
+  overflow: hidden;
+  display: none;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0;
+  background: #3498db;
+  transition: width 0.3s ease;
+}
+
+/* Modal table styles */
+#dataModal table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#dataModal th, #dataModal td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+#dataModal th {
+  background-color: #f8f9fa;
+}

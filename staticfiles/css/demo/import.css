@@ -49,6 +49,7 @@
     background: #fff;
     border-radius: 15px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
 }
 
 .modal-header {
@@ -102,6 +103,7 @@
     border-radius: 8px;
     margin-bottom: 0.5rem;
     animation: slideIn 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .file-item:hover {
@@ -125,23 +127,24 @@
     transform: scale(1.2);
 }
 
-/* Progress Bar */
-.progress-container {
-    margin: 1.5rem 0;
-}
-
 .progress-bar {
-    height: 10px;
-    background: #e9ecef;
-    border-radius: 5px;
+    width: 100%;
+    height: 20px;
+    background: #e5e7eb;          
+    border-radius: 6px;
     overflow: hidden;
 }
 
 .progress-fill {
+    width: 0;
     height: 100%;
-    background: linear-gradient(90deg, #4CAF50, #45a049);
-    width: 0%;
-    transition: width 0.3s ease;
+    background-color: #3b82f6;
+    transition: width 0.5s ease-in-out;
+}
+
+.progress-text {
+  text-align: center;
+  font-weight: 500;
 }
 
 .loader {
@@ -157,4 +160,125 @@
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-left: auto;
+    padding-right: 20px;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999; /* Ensure higher than other elements */
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.modal.show {
+    display: block;
+    opacity: 1;
+}
+
+.modal-dialog {
+    position: relative;
+    margin: 2% auto;
+    pointer-events: none; /* Prevent interaction with content behind */
+}
+
+.modal-content {
+    pointer-events: auto; /* Re-enable interaction inside modal */
+}
+
+/* Modal Animation */
+@keyframes modalEntry {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal.show .modal-dialog {
+    animation: modalEntry 0.3s ease-out;
+}
+
+/* Button Animations */
+.browse-btn {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(99, 102, 241, 0.1);
+}
+
+.browse-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(99, 102, 241, 0.2);
+}
+
+.btn-process {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-process:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(16, 185, 129, 0.2);
+    cursor: pointer;
+}
+
+.btn-process:disabled {
+    background: #6b7280;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.btn-process.loading i {
+    animation: spin 1s linear infinite;
+}
+
+.progress-container {
+  width: 100%;
+  max-width: 300px;
+  margin: 1rem auto;
+}
+
+.status-text {
+    color: #4b5563;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loader {
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
 }

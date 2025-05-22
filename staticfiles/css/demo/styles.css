@@ -272,10 +272,11 @@ body {
 
 /* District Dropdown Styles */
 .district-filter {
-    position: absolute;
+    /* position: absolute;
     top: 20px;
     right: 20px;
-    z-index: 10;
+    z-index: 10; */
+    margin-left: 15px;
 }
 
 .district-checkbox {

@@ -53,5 +53,8 @@ urlpatterns = [
     path('high-alerts/export-excel/', views.download_high_alerts_excel, name='download_high_alerts_excel'),
     path('high-alerts/pdf-report/', views.download_high_alert_report, name='download_high_alert_report'),
     path('import-data/', views.import_data_view, name='import_data'),
+    path('data-management/', views.data_management, name='data_management'),
+    path('upload-management-data/', views.upload_management_data, name='upload_management_data'),
+    path('get-management-data/', views.get_management_data, name='get_management_data'),
     # path('export-watchlist-heatmap/', views.patient_admitted_in_watchlist_hospitals_heatmap_data, name='export_watchlist_heatmap'),
 ]

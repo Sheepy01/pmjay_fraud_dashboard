@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => {
             importModal.classList.remove('show');
             progressModal.classList.remove('show');
+            updateProgress(0);
         });
     });
 
@@ -80,13 +81,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('processBtn').addEventListener('click', async () => {
         if (files.length === 0) return;
 
+        const processBtn = document.getElementById('processBtn');
+        processBtn.disabled = true;
+        processBtn.innerHTML = `<i class="fas fa-spinner"></i> Processing...`;
+
+        // Show progress modal
         importModal.classList.remove('show');
         progressModal.classList.add('show');
 
-        const formData = new FormData();
-        files.forEach(file => formData.append('files', file));
+        // Simulate progress (replace with real updates)
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(progress + Math.random() * 10, 90);
+            updateProgress(progress);
+        }, 500);
 
         try {
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
+
             const response = await fetch('/import-data/', {
                 method: 'POST',
                 headers: {
@@ -94,6 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: formData
             });
+
+            clearInterval(progressInterval);
+            updateProgress(100);
 
             if (!response.ok) throw new Error('Server error');
             
@@ -107,11 +123,35 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showErrorMessage(error.message);
         } finally {
-            progressModal.classList.remove('show');
-            files = [];
-            renderFileList();
+            setTimeout(() => {
+                progressModal.classList.remove('show');
+                processBtn.disabled = false;
+                processBtn.innerHTML = `<i class="fas fa-cogs"></i> Process Files`;
+            }, 1000);
         }
     });
+
+    // Update progress bar function
+    function updateProgress(percentage) {
+        const modal = document.getElementById('progressModal');
+
+        const fill       = modal.querySelector('.progress-fill');
+        const pctText    = modal.querySelector('.progress-text');
+        const statusText = modal.querySelector('.status-text');
+
+        fill.style.width      = percentage + '%';
+        pctText.textContent   = Math.round(percentage) + '%';
+
+        const messages = [
+            "Analyzing files…",
+            "Validating data…", 
+            "Updating records…",
+            "Finalizing import…"
+        ];
+        statusText.textContent = messages[
+            Math.floor((percentage / 100) * messages.length)
+        ];
+        }
 
     function showSuccessMessage(text) {
         // Implement toast notification

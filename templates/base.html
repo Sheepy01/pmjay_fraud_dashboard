@@ -8,9 +8,9 @@
   <link rel="stylesheet" href="{% static 'css/demo/styles.css' %}">
   <link rel="stylesheet" href="{% static 'css/demo/high_alert.css' %}">
   <link rel="stylesheet" href="{% static 'css/demo/import.css' %}">
+  <link rel="stylesheet" href="{% static 'css/demo/data_management.css' %}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <script src="{% static 'js/lib/chart.min.js' %}"></script>
-  {% comment %} <script src="{% static 'js/import.js' %}" defer></script> {% endcomment %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   {% block head_extra %}{% endblock %}
 </head>
@@ -35,6 +35,11 @@
           <li class="{% if active_page == 'high_alert' %}active{% endif %}">
             <a href="{% url 'high_alerts' %}">
               <i class="fas fa-exclamation-triangle"></i><span>High Alerts</span>
+            </a>
+          </li>
+          <li class="{% if active_page == 'data_management' %}active{% endif %}">
+            <a href="{% url 'data_management' %}">
+              <i class="fas fa-database"></i><span>Data Management</span>
             </a>
           </li>
         </ul>
@@ -154,6 +159,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   {% block extra_js %}
   <!-- child templates will load their page-specific JS here -->

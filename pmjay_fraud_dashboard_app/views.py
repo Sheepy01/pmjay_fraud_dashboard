@@ -62,88 +62,291 @@ class Upper(Func):
 def import_data_view(request):
     if request.method == 'POST':
         uploaded_files = request.FILES.getlist('files')
-        combined_path = os.path.join(settings.BASE_DIR, 'data', 'Combined_Last24Hours.xlsx')
-        
-        # Updated required columns based on your model
         required_columns = [
             'Registration Id', 
             'Preauth Initiated Date',
             'Preauth Initiated Time',
             'Hospital Code',
-            'Claim Initiated Amount(Rs.)'
+            'Claim Initiated Amount(Rs.)',
+            'Hospital Type',
+            'Case Type',
+            'State Name',
+            'Age(Years)',
+            'Procedure Code',
+            'District Name',
+            'Patient Name',
+            'Gender',
+            'Hospital Name',
+            'Hospital State Name',
+            'Family Id'
         ]
 
         try:
-            # Initialize combined dataframe
-            if os.path.exists(combined_path):
-                combined_df = pd.read_excel(combined_path, sheet_name='Dump', engine='openpyxl')
-            else:
-                combined_df = pd.DataFrame()
-
-            # Process each file
+            new_records = 0
+            updated_records = 0
+            
             for uploaded_file in uploaded_files:
                 try:
-                    # Read from "Dump" sheet with header row
                     df = pd.read_excel(
                         uploaded_file,
                         sheet_name='Dump',
                         engine='openpyxl',
-                        header=0  # Header is in first row (adjust if needed)
+                        dtype={'Registration Id': str}
                     )
                     
-                    # Clean column names
+                    # Validate and clean data
                     df.columns = df.columns.str.strip()
-                    
-                    # Validate columns
                     missing_cols = [col for col in required_columns if col not in df.columns]
                     if missing_cols:
                         messages.error(request, f"Skipped {uploaded_file.name}: Missing columns {', '.join(missing_cols)}")
                         continue
+
+                    # Convert date and time
+                    df['preauth_date'] = pd.to_datetime(
+                        df['Preauth Initiated Date'],
+                        dayfirst=True,  # Prioritize DD-MM-YYYY format
+                        errors='coerce'
+                    ).dt.date
                     
-                    # Add to combined data
-                    combined_df = pd.concat([combined_df, df], ignore_index=True)
+                    df['preauth_time'] = pd.to_datetime(
+                        df['Preauth Initiated Time'].astype(str).str.replace(r'\s+[AP]M$', '', regex=True),
+                        format='%H:%M:%S',  # Try with seconds first
+                        errors='coerce'
+                    ).dt.time
+
+                    # Fallback for times without seconds
+                    if df['preauth_time'].isna().any():
+                        df['preauth_time'] = pd.to_datetime(
+                            df['Preauth Initiated Time'].astype(str).str.replace(r'\s+[AP]M$', '', regex=True),
+                            format='%H:%M',
+                            errors='coerce'
+                        ).dt.time
                     
+                    df['Registration Id'] = (
+                        df['Registration Id']
+                        .astype(str)
+                        .str.strip()
+                        .replace({'nan': None, 'None': None, '': None})
+                    )
+
+                    # Show problematic rows
+                    invalid_rows = df[
+                        df['preauth_date'].isna() |
+                        df['preauth_time'].isna() |
+                        df['Registration Id'].isna()
+                    ]
+
+                    # Filter valid records
+                    valid_df = df.dropna(subset=[
+                        'preauth_date', 
+                        'preauth_time', 
+                        'Registration Id'
+                    ])
+                    
+                    # Create model instances
+                    instances = []
+                    for _, row in valid_df.iterrows():
+                        instances.append(Last24Hour(
+                            registration_id=str(row['Registration Id']).strip(),
+                            preauth_initiated_date=row['preauth_date'],
+                            preauth_initiated_time=row['preauth_time'],
+                            hospital_id=str(row['Hospital Code']).strip().upper(),  # Corrected
+                            hospital_type=str(row['Hospital Type']).strip(),
+                            case_type=str(row['Case Type']).strip(),
+                            claim_initiated_amount=row['Claim Initiated Amount(Rs.)'],
+                            state_name=str(row['State Name']).strip(),
+                            age_years=str(row['Age(Years)']).strip(),
+                            procedure_code=str(row['Procedure Code']).strip(),
+                            district_name=str(row['District Name']).strip(),
+                            patient_name=str(row['Patient Name']).strip(),
+                            gender=str(row['Gender']).strip().upper(),
+                            hospital_name=str(row['Hospital Name']).strip().upper(),
+                            hospital_state_name=str(row['Hospital State Name']).strip().upper(),
+                            family_id=str(row['Family Id']).strip(),
+                        ))
+
+                    # Bulk create with conflict handling
+                    result = Last24Hour.objects.bulk_create(
+                        instances,
+                        update_conflicts=True,
+                        unique_fields=['registration_id', 'preauth_initiated_date', 'preauth_initiated_time'],
+                        update_fields=[
+                            'hospital_id',  # Not hospital_code
+                            'hospital_type',
+                            'case_type',
+                            'claim_initiated_amount',
+                            'state_name',
+                            'age_years',
+                            'procedure_code',
+                            'district_name',
+                            'patient_name',
+                            'gender',
+                            'hospital_name',
+                            'hospital_state_name',
+                            'family_id'
+                        ])
+                    
+                    new_records += len(result)
+                    updated_records += len(instances) - len(result)
+
                 except Exception as e:
                     messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
                     continue
 
-            # Process combined data
-            if not combined_df.empty:
-                # Create datetime column
-                combined_df['preauth_datetime'] = pd.to_datetime(
-                    combined_df['Preauth Initiated Date'].astype(str) + ' ' +
-                    combined_df['Preauth Initiated Time'].astype(str),
-                    errors='coerce'
-                )
-                
-                # Remove invalid datetime entries
-                combined_df = combined_df.dropna(subset=['preauth_datetime'])
-                
-                # Deduplicate
-                combined_df = combined_df.sort_values('preauth_datetime')
-                combined_df = combined_df.drop_duplicates(
-                    subset=['Registration Id', 'preauth_datetime'],
-                    keep='last'
-                )
-
-                # Save to Excel
-                combined_df.to_excel(combined_path, 
-                                   sheet_name='Dump', 
-                                   index=False, 
-                                   engine='openpyxl')
-                
-                # Update database
-                from django.core.management import call_command
-                call_command('import_data')
-                
-                messages.success(request, f"Processed {len(combined_df)} records successfully!")
-            else:
-                messages.warning(request, "No valid data found in files")
-
+            messages.success(request, 
+                f"Processed {new_records} new and {updated_records} updated records"
+            )
+            
         except Exception as e:
             messages.error(request, f"System error: {str(e)}")
 
         return redirect('dashboard')
+    
+def data_management(request):
+    return render(request, 'data_management.html', {'active_page': 'data_management'})
+
+from django.db import transaction
+import numpy as np
+import sys
+@require_POST
+def upload_management_data(request):
+    file = request.FILES.get('file')
+    model_type = request.POST.get('model_type')
+    
+    if not file:
+        return JsonResponse({'status': 'error', 'message': 'No file uploaded'}, status=400)
+    if not model_type:
+        return JsonResponse({'status': 'error', 'message': 'Missing model type'}, status=400)
+
+    try:
+        df = pd.read_excel(file)
+        df = df.replace({np.nan: None})
+
+        required_columns = {
+            'suspicious': ['Hospital Id', 'Hospital Name', 'Number of Surgeons', 'Number of OT'],
+            'beds': ['Hospital ID', 'Bed Strength', 'Hospital Name']
+        }.get(model_type, [])
+
+        if not required_columns:
+            return JsonResponse({'status': 'error', 'message': 'Invalid model type'}, status=400)
+
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Missing columns: {", ".join(missing_cols)}'
+            }, status=400)
+
+        # Handle duplicates before processing
+        if model_type == 'suspicious':
+            # Remove duplicates keeping first occurrence
+            initial_count = len(df)
+            df = df.drop_duplicates(
+                subset=['Hospital Id'], 
+                keep='first' 
+            )
+            removed_duplicates = initial_count - len(df)
+            
+            with transaction.atomic():
+                SuspiciousHospital.objects.all().delete()
+                hospitals = [
+                    SuspiciousHospital(
+                        hospital_id=row['Hospital Id'],
+                        hospital_name=row['Hospital Name'],
+                        number_of_surgeons=row['Number of Surgeons'],
+                        number_of_ot=row['Number of OT']
+                    )
+                    for _, row in df.iterrows()
+                ]
+                SuspiciousHospital.objects.bulk_create(hospitals)
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'message': f'Uploaded {len(df)} records (removed {removed_duplicates} duplicates)'
+                })
+
+        elif model_type == 'beds':
+            # Handle Hospital Beds upload
+            required_columns = ['Hospital ID', 'Bed Strength']
+            
+            # Fill missing bed_strength with 0
+            df['Bed Strength'] = df['Bed Strength'].fillna(0)
+            
+            # Convert to integers with error handling
+            try:
+                df['Bed Strength'] = df['Bed Strength'].astype(int)
+            except ValueError:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'bed_strength contains non-numeric values that cannot be converted to integers'
+                }, status=400)
+
+            # Remove duplicates
+            initial_count = len(df)
+            df = df.drop_duplicates(subset=['Hospital ID'], keep='first')
+            removed_duplicates = initial_count - len(df)
+
+            with transaction.atomic():
+                HospitalBeds.objects.all().delete()
+                beds = []
+                for index, row in df.iterrows():
+                    try:
+                        beds.append(HospitalBeds(
+                            hospital_id=row['Hospital ID'],
+                            hospital_name=row.get('Hospital Name', ''),
+                            bed_strength=row['Bed Strength']
+                        ))
+                    except Exception as e:
+                        return JsonResponse({
+                            'status': 'error',
+                            'message': f'Error in row {index+2}: {str(e)}'
+                        }, status=400)
+                        
+                HospitalBeds.objects.bulk_create(beds)
+                
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Uploaded {len(df)} beds records. {removed_duplicates} duplicates removed. {initial_count - len(df)} nulls converted to 0.'
+            })
+
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'{str(e)} (Line {sys.exc_info()[-1].tb_lineno if hasattr(sys, "exc_info") else "N/A"})'
+        }, status=400)
+
+def get_management_data(request):
+    model_type = request.GET.get('model_type')
+    
+    try:
+        if model_type == 'suspicious':
+            data = SuspiciousHospital.objects.all()
+            fields = ['hospital_id', 'hospital_name', 'number_of_surgeons', 'number_of_ot']
+            labels = ['Hospital ID', 'Hospital Name', 'Number of Surgeons', 'Number of OTs']
+        elif model_type == 'beds':
+            data = HospitalBeds.objects.all()
+            fields = ['hospital_id', 'hospital_name', 'bed_strength']
+            labels = ['Hospital ID', 'Hospital Name', 'Bed Strength']
+        else:
+            return HttpResponse('Invalid model type')
+            
+        # build the table head
+        html = '<table><thead><tr>'
+        for label in labels:
+            html += f'<th>{label}</th>'
+        html += '</tr></thead><tbody>'
+
+        # build the rows
+        for item in data:
+            html += '<tr>'
+            for field in fields:
+                html += f'<td>{getattr(item, field)}</td>'
+            html += '</tr>'
+        html += '</tbody></table>'
+    except Exception as e:
+        return HttpResponse(f'Error: {str(e)}', status=400)
+    
+    return HttpResponse(html)
 
 def get_districts(request):
     districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
@@ -151,70 +354,85 @@ def get_districts(request):
     return JsonResponse({'districts': district_list})
 
 def get_flagged_claims(request):
+    # 1. parse district
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
-    # Get current date in the correct timezone
-    today = date(2025, 2, 5) #date(2025, 2, 5)
-    
-    # Base queryset with today's filter
+
+    # 2. parse dates
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    if startDate and endDate:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
+        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
+    else:
+        today = timezone.localdate()
+        start_date = end_date = today
+
+    # 3. build base queryset over the date range
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    flagged_cases_today = Last24Hour.objects.filter(
+    base_qs = Last24Hour.objects.filter(
         hospital_id__in=suspicious_hospitals,
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added today filter
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     )
-    
     if districts:
-        flagged_cases_today = flagged_cases_today.filter(district_name__in=districts)
-    
-    # Date ranges
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
-    
-    # Separate queryset for 30-day period
-    flagged_cases_30d = Last24Hour.objects.filter(
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # 4. counts
+    total = base_qs.count()
+    # yesterday always relative to end_date?
+    yesterday = end_date - timedelta(days=1)
+    yesterday_count = base_qs.filter(preauth_initiated_date__date=yesterday).count()
+    last_30_days = Last24Hour.objects.filter(
         hospital_id__in=suspicious_hospitals,
         hospital_type='P',
-        preauth_initiated_date__date__gte=thirty_days_ago
+        preauth_initiated_date__date__gte=end_date - timedelta(days=30),
+        preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        flagged_cases_30d = flagged_cases_30d.filter(district_name__in=districts)
-    
-    data = {
-        'total': flagged_cases_today.count(),
-        'yesterday': flagged_cases_today.filter(
-            preauth_initiated_date__date=yesterday
-        ).count(),
-        'last_30_days': flagged_cases_30d.count()
-    }
-    
-    return JsonResponse(data)
+        last_30_days = last_30_days.filter(district_name__in=districts)
+
+    return JsonResponse({
+        'total': total,
+        'yesterday': yesterday_count,
+        'last_30_days': last_30_days.count()
+    })
 
 def get_flagged_claims_details(request):
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
-    
-    # Get current date
-    today = date(2025, 2, 5) #date(2025, 2, 5)
-    
-    # Base query with today's filter
+
+    # 1. Parse start_date / end_date from GET
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
+
+    # 2. Base queryset over the date range
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    flagged_cases = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P') &
-        Q(preauth_initiated_date__date=today)  # Added today filter
+    qs = Last24Hour.objects.filter(
+        hospital_id__in=suspicious_hospitals,
+        hospital_type='P',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     )
-    
     if districts:
-        flagged_cases = flagged_cases.filter(district_name__in=districts)
-    
-    # Pagination
-    paginator = Paginator(flagged_cases.order_by('preauth_initiated_date'), page_size)
+        qs = qs.filter(district_name__in=districts)
+
+    # 3. Pagination
+    paginator = Paginator(qs.order_by('preauth_initiated_date'), page_size)
     page_obj = paginator.get_page(page)
-    
+
+    # 4. Build response data
     data = []
     for idx, case in enumerate(page_obj.object_list, 1):
         data.append({
@@ -222,14 +440,15 @@ def get_flagged_claims_details(request):
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'district_name': case.district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
+            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') 
+                                      if case.preauth_initiated_date else 'N/A',
             'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
             'hospital_id': case.hospital_id or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
             'reason': 'Suspicious hospital'
         })
-    
+
     return JsonResponse({
         'data': data,
         'pagination': {
@@ -237,7 +456,7 @@ def get_flagged_claims_details(request):
             'total_pages': paginator.num_pages,
             'current_page': page_obj.number,
             'has_next': page_obj.has_next(),
-            'has_previous': page_obj.has_previous()
+            'has_previous': page_obj.has_previous(),
         }
     })
 
@@ -1508,50 +1727,47 @@ capacity_map = None
 def load_dataframes():
     global df_cache, capacity_map
     if df_cache is None:
-        # Load SuspiciousHospital for capacities
-        df_hosp = pd.read_excel('data/Suspicious_Hospital_List.xlsx')
-        df_hosp.columns = df_hosp.columns.str.strip()
-        capacity_map = (
-            df_hosp.set_index('Hospital Id')['Number of Surgeons']
-                  .fillna(0).astype(int)
-                  .mul(30)
-                  .to_dict()
-        )
+        # Get hospital capacities from database
+        capacity_qs = SuspiciousHospital.objects.filter(
+            number_of_surgeons__isnull=False
+        ).values('hospital_id', 'number_of_surgeons')
+        
+        capacity_map = {
+            item['hospital_id']: item['number_of_surgeons'] * 30
+            for item in capacity_qs
+        }
 
-        # Load Last24Hour dump
-        df_last = pd.read_excel(
-            'data/Combined_Last24Hours.xlsx',
-            sheet_name='Dump'
+        # Get last 24h data from database
+        qs = Last24Hour.objects.annotate(
+            preauth_initiated_datetime=(
+                F('preauth_initiated_date') + 
+                F('preauth_initiated_time')
+            )
+        ).values(
+            'hospital_type',
+            'hospital_code',
+            'procedure_code',
+            'district_name',
+            'age_years',
+            'patient_name',
+            'registration_id',
+            'case_id',
+            'member_id',
+            'hospital_name',
+            'preauth_initiated_date',
+            'preauth_initiated_time',
+            'preauth_initiated_datetime'
         )
-        df_last.columns = df_last.columns.str.strip()
-        # Rename and parse datetime
-        df_last.rename(columns={
-            'Hospital Type': 'hospital_type',
-            'Hospital Code': 'hospital_id',
-            'Procedure Code': 'procedure_code',
-            'District Name': 'district_name',
-            'Age(Years)': 'age_years',
-            'Patient Name': 'patient_name',
-            'Registration Id': 'registration_id',
-            'Case Id': 'case_id',
-            'Member Id': 'member_id',
-            'Hospital Name': 'hospital_name',
-            'Preauth Initiated Date': 'preauth_date_str',
-            'Preauth Initiated Time': 'preauth_time_str'
-        }, inplace=True)
-        df_last['hospital_id'] = df_last['hospital_id'].astype(str).str.upper().str.strip()
-        df_last['preauth_initiated_datetime'] = pd.to_datetime(
-            df_last['preauth_date_str'].astype(str) + ' ' + df_last['preauth_time_str'].astype(str),
-            errors='coerce'
-        )
-        df_last['preauth_initiated_date'] = df_last['preauth_initiated_datetime'].dt.date
+        
+        df_last = pd.DataFrame.from_records(qs)
         df_last['preauth_hour'] = df_last['preauth_initiated_datetime'].dt.hour
         df_cache = df_last
+        
     return df_cache, capacity_map
 
 
 def get_ophthalmology_cases(request):
-    # 0. District filter
+    # District filter
     districts = request.GET.get('district', '')
     districts = [d.strip() for d in districts.split(',')] if districts else []
 
@@ -1563,24 +1779,22 @@ def get_ophthalmology_cases(request):
     # Load data
     df, cap_map = load_dataframes()
 
-    # Helper: base period mask
+    # Helper: base period mask (maintain pandas filtering)
     def period_mask(start_date, end_date):
         m = (
             (df['hospital_type'] == 'P') &
             df['procedure_code'].str.contains('SE', na=False) &
-            (df['preauth_initiated_date'] >= start_date) &
-            (df['preauth_initiated_date'] <= end_date)
+            (df['preauth_initiated_date'] >= pd.to_datetime(start_date)) &
+            (df['preauth_initiated_date'] <= pd.to_datetime(end_date))
         )
         if districts:
             m &= df['district_name'].isin(districts)
         return m
 
-    # Masks for each period
+    # Masks for each period (same as before)
     mask_today = period_mask(today, today)
     mask_yest = period_mask(yesterday, yesterday)
     mask_30 = period_mask(thirty_days_ago, today)
-
-    df_today = df.loc[mask_today]
 
     # 1. Age < 40 counts
     def count_age(mask):

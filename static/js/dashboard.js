@@ -1,4 +1,68 @@
 $(document).ready(function() {
+    function daysInMonth(year, month) {
+        return new Date(year, month, 0).getDate();
+    }
+
+    function getDateRange() {
+        const pad = (s) => String(s).padStart(2, '0');
+        const y1 = $('#from-year').val(),  m1 = pad($('#from-month').val()), d1 = pad($('#from-day').val());
+        const y2 = $('#to-year').val(),    m2 = pad($('#to-month').val()),   d2 = pad($('#to-day').val());
+        return {
+            startDate: `${y1}-${m1}-${d1}`,
+            endDate:   `${y2}-${m2}-${d2}`
+        };
+    }
+
+    function populateDateDropdowns() {
+        const today = new Date();
+        const curYear = today.getFullYear();
+        const years = [];
+        for (let y = 2000; y <= curYear; y++) years.push(y);
+
+        // helper to fill one set
+        function fillOne(prefix, defaultDate) {
+            const [m, d, y] = [defaultDate.getMonth() + 1, defaultDate.getDate(), defaultDate.getFullYear()];
+            const monthSel = $(`#${prefix}-month`);
+            const daySel   = $(`#${prefix}-day`);
+            const yearSel  = $(`#${prefix}-year`);
+
+            // months
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            monthSel.empty();
+            monthNames.forEach((name, idx) => {
+                monthSel.append(`<option value="${idx+1}">${name}</option>`);
+            });
+            
+
+            // years
+            yearSel.empty();
+            years.forEach(yr => yearSel.append(`<option value="${yr}">${yr}</option>`));
+
+            // set defaults
+            monthSel.val(m);
+            yearSel.val(y);
+
+            // populate days based on month/year
+            function refreshDays() {
+            const mm = parseInt(monthSel.val(), 10);
+            const yy = parseInt(yearSel.val(), 10);
+            const dim = daysInMonth(yy, mm);
+            daySel.empty();
+            for (let dd = 1; dd <= dim; dd++) daySel.append(`<option value="${dd}">${dd}</option>`);
+            daySel.val(d);
+            }
+            refreshDays();
+
+            // when month or year changes, refresh days (and clamp day)
+            monthSel.add(yearSel).on('change', refreshDays);
+        }
+
+        // fill both from/to with today
+        populateDateDropdowns = null; // prevent re-definition
+        fillOne('from', today);
+        fillOne('to', today);
+    }
+
     window.highValueCharts = {};
     let agePieChart, genderPieChart;
 
@@ -167,12 +231,13 @@ $(document).ready(function() {
                 return $(this).val();
             }).get();
             
+            const { startDate, endDate } = getDateRange();
             // Trigger update - empty array means "All Districts"
-            updateFlaggedClaims(selectedDistricts);
-            updateHighValueClaims(selectedDistricts);
-            updateHospitalBedCases(selectedDistricts);
-            updateGeoAnomalies(selectedDistricts);
-            updateOphthalmology(selectedDistricts);
+            updateFlaggedClaims(selectedDistricts, startDate, endDate);
+            updateHighValueClaims(selectedDistricts, startDate, endDate);
+            updateHospitalBedCases(selectedDistricts, startDate, endDate);
+            updateGeoAnomalies(selectedDistricts, startDate, endDate);
+            updateOphthalmology(selectedDistricts, startDate, endDate);
         });
         
         // "All Districts" checkbox - UPDATED VERSION
@@ -187,23 +252,42 @@ $(document).ready(function() {
             } else {
                 $('#districtDropdown option').prop('selected', false);
             }
+
+            const { startDate, endDate } = getDateRange();
             
             updateSelectedDisplay();
             
             // Trigger update with empty array for "All Districts"
-            updateFlaggedClaims(isChecked ? [] : null);
-            updateHighValueClaims(isChecked ? [] : null);
-            updateHospitalBedCases(isChecked ? [] : null);
-            updateFamilyIdCases(isChecked ? [] : null);
-            updateGeoAnomalies(isChecked ? [] : null);
-            updateOphthalmology(isChecked ? [] : null);
+            updateFlaggedClaims(isChecked ? [] : null, startDate, endDate);
+            updateHighValueClaims(isChecked ? [] : null, startDate, endDate);
+            updateHospitalBedCases(isChecked ? [] : null, startDate, endDate);
+            updateFamilyIdCases(isChecked ? [] : null, startDate, endDate);
+            updateGeoAnomalies(isChecked ? [] : null, startDate, endDate);
+            updateOphthalmology(isChecked ? [] : null, startDate, endDate);
         });
     }
     
     loadDistricts();
     initDistrictDropdown();
+    populateDateDropdowns();
 
-    function updateFlaggedClaims(districts = []) {
+    // =================================
+    // APPLY DATE FILTER ON “Run” CLICK
+    // =================================
+    $('#apply-date-filter').on('click', function() {
+        // 1) Get selected districts exactly as in your other handlers
+        const selectedDistricts = $('.district-checkbox:checked:not(#selectAll)')
+            .map(function(){ return $(this).val(); })
+            .get();
+
+        // 2) Grab the dates via your helper
+        const { startDate, endDate } = getDateRange();
+
+        // 3) Re-run all the card-updaters
+        updateFlaggedClaims(selectedDistricts, startDate, endDate);
+    });
+
+    function updateFlaggedClaims(districts = [], startDate = '', endDate = '') {
         // If null (All Districts unchecked), show empty state
         if (districts === null) {
             $('.flagged-claims .card-value').text('0');
@@ -215,7 +299,9 @@ $(document).ready(function() {
             url: '/get-flagged-claims/',
             method: 'GET',
             data: { 
-                district: districts.length > 0 ? districts.join(',') : ''
+                district: districts.length > 0 ? districts.join(',') : '',
+                start_date: startDate,
+                end_date: endDate
             },
             beforeSend: function() {
                 $('.flagged-claims .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
@@ -246,7 +332,7 @@ $(document).ready(function() {
         });
     });
 
-    function updateHighValueClaims(districts = []) {
+    function updateHighValueClaims(districts = [], startDate = '', endDate = '') {
         // If null (All Districts unchecked), show empty state
         if (districts === null) {
             $('.high-value .card-value').text('0');
@@ -257,7 +343,11 @@ $(document).ready(function() {
         $.ajax({
             url: '/get-high-value-claims/',
             method: 'GET',
-            data: { district: districts.join(',') },
+            data: { 
+                district: districts.join(','),
+                start_date: startDate,
+                end_date: endDate 
+            },
             beforeSend: function() {
                 $('.high-value .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
             },
@@ -301,12 +391,16 @@ $(document).ready(function() {
         window.location.href = url;
     });
 
-    function updateHospitalBedCases(districts = []) {
+    function updateHospitalBedCases(districts = [], startDate = '', endDate = '') {
         // $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
         $.ajax({
             url: '/get-hospital-bed-cases/',
             method: 'GET',
-            data: { district: districts.join(',') },
+            data: { 
+                district: districts.join(','),
+                start_date: startDate,
+                end_date: endDate 
+            },
             beforeSend: function() {
                 $('.hospital-beds .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
             },
@@ -358,13 +452,17 @@ $(document).ready(function() {
         window.location.href = url;
       });
 
-    function updateFamilyIdCases(districts = []) {
+    function updateFamilyIdCases(districts = [], startDate = '', endDate = '') {
         $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
         
         $.ajax({
             url: '/get-family-id-cases/',
             method: 'GET',
-            data: { district: districts.join(',') },
+            data: { 
+                district: districts.join(','),
+                start_date: startDate,
+                end_date: endDate
+             },
             beforeSend: function() {
                 $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
             },
@@ -412,10 +510,14 @@ $(document).ready(function() {
         window.location.href = url;
     });
 
-    function updateGeoAnomalies(districts = []) {
+    function updateGeoAnomalies(districts = [], startDate = '', endDate = '') {
         $.ajax({
             url: '/get-geo-anomalies/',
-            data: { district: districts.join(',') },
+            data: { 
+                district: districts.join(','),
+                start_date: startDate,
+                end_date: endDate 
+            },
             beforeSend: function() {
                 $('.geo-anomalies .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
             },
@@ -450,10 +552,14 @@ $(document).ready(function() {
     });
   
 
-    function updateOphthalmology(districts = []) {
+    function updateOphthalmology(districts = [], startDate = '', endDate = '') {
         $.ajax({
             url: '/get-ophthalmology-cases/',
-            data: { district: districts.join(',') },
+            data: { 
+                district: districts.join(','),
+                start_date: startDate,
+                end_date: endDate 
+            },
             beforeSend: function() {
                 $('.ophthalmology .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
             },
@@ -503,26 +609,6 @@ $(document).ready(function() {
         url += `?type=${type}`;
         if (district) url += `&district=${encodeURIComponent(district)}`;
         window.location.href = url;
-    });
-
-    // Initialize
-    $(document).ready(function() {
-        updateFlaggedClaims();
-        updateHighValueClaims();
-        updateHospitalBedCases();
-        updateFamilyIdCases();
-        updateGeoAnomalies();
-        updateOphthalmology();
-        
-        // Update when district changes
-        $(document).on('districtSelected', function(e, districts) {
-            updateFlaggedClaims(districts);
-            updateHighValueClaims(districts);
-            updateHospitalBedCases(districts);
-            updateFamilyIdCases(districts);
-            updateGeoAnomalies(districts);
-            updateOphthalmology(districts);
-        });
     });
 
     // ======================
@@ -617,14 +703,14 @@ $(document).ready(function() {
                 this.pageSize = 50;
                 this.totalPages = 1;
                 this.districts = districts;
-    
+                
                 // Event listeners
                 $('#flaggedPageSizeSelect').off('change').on('change', () => {
                     this.pageSize = parseInt($('#flaggedPageSizeSelect').val());
                     this.currentPage = 1;
                     this.loadTableData(this.districts);
                 });
-    
+                
                 $(document).off('click', '.flagged-page-btn').on('click', '.flagged-page-btn', (e) => {
                     e.preventDefault();
                     const page = parseInt($(e.currentTarget).data('page'));
@@ -635,7 +721,8 @@ $(document).ready(function() {
                 });
             },
             loadTableData: function(districts) {
-                const url = `/get-flagged-claims-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                const { startDate, endDate } = getDateRange();
+                const url = `/get-flagged-claims-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}&start_date=${startDate}&end_date=${endDate}`;
     
                 fetch(url, {
                     headers: {

@@ -35,7 +35,7 @@
 }
 
 .modal-dialog {
-    max-width: 600px;
+    min-width: 600px;
     margin: 2rem auto;
     transform: translateY(-50px);
     transition: transform 0.3s;

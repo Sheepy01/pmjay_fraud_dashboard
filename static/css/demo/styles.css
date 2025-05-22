@@ -30,6 +30,54 @@
   color: #00910a;
 }
 
+/* Container around all date filters + Run button */
+#date-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f9f9f9;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  margin-bottom: 1.5rem;
+}
+
+/* Each “From:” or “To:” group */
+.date-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+/* The selects themselves */
+.date-container select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 0.25rem;
+  background: #fff;
+  font-size: 0.9rem;
+  min-width: 3.5rem;
+}
+
+/* The Run button */
+#apply-date-filter {
+  padding: 0.45rem 1rem;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 0.25rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+#apply-date-filter:hover {
+  background: #0056b3;
+}
+
+
 /* Card-specific colors */
 .flagged-claims {
     border-top: 4px solid #26547D;
@@ -148,7 +196,7 @@ body {
 
 .sidebar-footer {
     padding: 20px;
-    padding-top: 480px;
+    padding-top: 430px;
     margin-top: auto;
 }
 

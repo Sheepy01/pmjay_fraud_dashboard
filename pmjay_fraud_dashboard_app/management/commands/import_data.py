@@ -16,7 +16,6 @@ class Command(BaseCommand):
         # -------------------------------------------------------------------
         HospitalBeds.objects.all().delete()
         SuspiciousHospital.objects.all().delete()
-        Last24Hour.objects.all().delete()
 
         # Import Hospital Beds data
         try:

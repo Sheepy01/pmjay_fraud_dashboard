@@ -11,13 +11,6 @@ class SuspiciousHospital(models.Model):
         return self.hospital_name
 
 class Last24Hour(models.Model):
-    class Meta:
-        indexes = [
-            models.Index(fields=['hospital_type', 'procedure_code']),
-            models.Index(fields=['preauth_initiated_date']),
-            models.Index(fields=['district_name']),
-            models.Index(fields=['age_years']),
-        ]
     registration_id = models.CharField(max_length=100, null=True, blank=True)
     case_id = models.CharField(max_length=100, null=True, blank=True)
     member_id = models.CharField(max_length=100, null=True, blank=True)
@@ -71,6 +64,16 @@ class Last24Hour(models.Model):
     preauth_initiated_date = models.DateTimeField()
     case_type = models.CharField(max_length=50)  # e.g., "SURGERY" or "MEDICAL"
     claim_initiated_amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        unique_together = ('registration_id', 'preauth_initiated_date', 'preauth_initiated_time')
+        indexes = [
+            models.Index(fields=['hospital_type', 'procedure_code']),
+            models.Index(fields=['preauth_initiated_date']),
+            models.Index(fields=['district_name']),
+            models.Index(fields=['age_years']),
+            models.Index(fields=['hospital_code']),
+        ]
 
     def __str__(self):
         return f"{self.hospital_id} at {self.preauth_initiated_date}"
