@@ -35,7 +35,10 @@
             <!-- Flagged Claims Card -->
             <div class="card flagged-claims" 
             data-modal-title="Flagged Claims Details">
-                <button id="download-flagged" class="download-btn"  data-download-url="{% url 'download_flagged_claims' %}" data-district="{{ district_param|urlencode }}">
+                <button id="download-flagged" 
+                class="download-btn"  
+                data-download-url="{% url 'download_flagged_claims' %}" 
+                data-district="{{ district_param|urlencode }}">
                     <i class="fas fa-download"></i>
                     <span class="btn-text"></span>
                 </button>

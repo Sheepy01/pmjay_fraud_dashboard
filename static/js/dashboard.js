@@ -321,14 +321,15 @@ $(document).ready(function() {
 
     $(function(){
         $('#download-flagged').on('click', function(){
-          const baseUrl  = $(this).data('download-url');
-          const district = $(this).data('district') || '';
-    
-          let url = baseUrl;
-          if (district) {
-            url += '?district=' + encodeURIComponent(district);
-          }
-          window.location.href = url;
+            const baseUrl  = $(this).data('download-url');
+            const district = $(this).data('district') || '';
+            const { startDate, endDate } = getDateRange();
+            const params = new URLSearchParams();
+            if (district)           params.append('district',   district);
+            if (startDate)          params.append('start_date', startDate);
+            if (endDate)            params.append('end_date',   endDate);
+            const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
+            window.location.href = url;
         });
     });
 
@@ -827,8 +828,9 @@ $(document).ready(function() {
                 `);
             },
             loadChartData: function(districts) {
+                const {startDate, endDate} = getDateRange();
                 // Load bar chart data
-                const chartUrl = `/get-flagged-claims-by-district/?district=${districts.join(',')}`;
+                const chartUrl = `/get-flagged-claims-by-district/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(chartUrl)
                     .then(response => response.json())
@@ -895,13 +897,14 @@ $(document).ready(function() {
             },
             
             loadDemographicCharts: function(districts) {
+                const {startDate, endDate} = getDateRange();
                 // Load age distribution
-                fetch(`/get-age-distribution/?district=${districts.join(',')}`)
+                fetch(`/get-age-distribution/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderDemographicChart('agePieChart', data, 'ageCallouts'));
                 
                 // Load gender distribution
-                fetch(`/get-gender-distribution/?district=${districts.join(',')}`)
+                fetch(`/get-gender-distribution/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderDemographicChart('genderPieChart', data, 'genderCallouts'));
             },
@@ -2975,12 +2978,13 @@ $(document).ready(function() {
     }
 
     function generatePDFReport() {
+        const { startDate, endDate } = getDateRange();
         const loader      = document.getElementById('pdfLoader');
         const progressBar = document.getElementById('pdfProgressBar');
         const progressTxt = document.getElementById('pdfProgressText');
         const downloadBtn = document.querySelector('.modal-pdf-download');
         const modal       = document.querySelector('.modal-container');
-        const cardId      = modal.dataset.cardId;       // 'flagged-claims' or 'high-value'
+        const cardId      = modal.dataset.cardId;
         const downloadUrl = modal.dataset.pdfUrl;
         const district    = modal.dataset.district || '';
       
@@ -3004,7 +3008,9 @@ $(document).ready(function() {
       
         // Build payload
         const fd = new FormData();
-        fd.append('district', district);
+        if(district)    fd.append('district', district);
+        if(startDate)   fd.append('start_date', startDate);
+        if(endDate)     fd.append('end_date', endDate);
       
         if (cardId === 'flagged-claims') {
           ['flagged','age','gender'].forEach(key => {

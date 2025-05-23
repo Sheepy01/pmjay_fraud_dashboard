@@ -24,6 +24,7 @@ from datetime import timedelta
 from weasyprint import HTML
 import pandas as pd
 import datetime
+from datetime import date
 import random
 import re
 import io
@@ -406,14 +407,14 @@ def get_flagged_claims_details(request):
     districts = district_param.split(',') if district_param else []
 
     # 1. Parse start_date / end_date from GET
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
     try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
     except ValueError:
         start_date = timezone.localdate()
     try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
     except ValueError:
         end_date = timezone.localdate()
 
@@ -464,15 +465,24 @@ def get_flagged_claims_details(request):
 def get_flagged_claims_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
     
-    # Get current date filter
-    today = date(2025, 2, 5)
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     # Base queryset with today's filter
     queryset = Last24Hour.objects.filter(
         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added today filter
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date  # Added today filter
     )
     
     if districts:
@@ -526,12 +536,23 @@ def get_all_flagged_claims(request):
 def get_age_distribution(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     queryset = Last24Hour.objects.filter(
         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added today filter
+        preauth_initiated_date__date__gte=start_date,  # Added today filter
+        preauth_initiated_date__date__lte=end_date  # Added today filter
     )
 
     if districts:
@@ -556,12 +577,23 @@ def get_age_distribution(request):
 def get_gender_distribution(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     queryset = Last24Hour.objects.filter(
         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added today filter
+        preauth_initiated_date__date__gte=start_date, # Added today filter
+        preauth_initiated_date__date__lte=end_date, # Added today filter
     )
 
     if districts:
@@ -599,8 +631,17 @@ def get_gender_distribution(request):
     })
 
 def download_flagged_claims_excel(request):
-    # Get current date filter
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
+    except (ValueError, TypeError):
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
+    except (ValueError, TypeError):
+        end_date = date.today()
     
     # 1. Apply same filters as other endpoints
     district_param = request.GET.get('district', '')
@@ -611,7 +652,8 @@ def download_flagged_claims_excel(request):
     qs = Last24Hour.objects.filter(
         Q(hospital_id__in=suspicious_hospitals) &
         Q(hospital_type='P') &
-        Q(preauth_initiated_date__date=today)  # Added date filter
+        Q(preauth_initiated_date__date__gte=start_date) & 
+        Q(preauth_initiated_date__date__lte=end_date)
     )
     
     if districts:
@@ -661,15 +703,26 @@ def download_flagged_claims_excel(request):
         buffer,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-    response['Content-Disposition'] = f'attachment; filename="flagged_claims_{today}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="flagged_claims_{start_date}_to_{end_date}.xlsx"'
     return response
 
 @require_http_methods(["GET", "POST"])
 def download_flagged_claims_report(request):
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
+    except (ValueError, TypeError):
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
+    except (ValueError, TypeError):
+        end_date = date.today()
+
     # 1) Read parameters & chart images
     district = request.POST.get('district', '')
     districts = district.split(',') if district else []
-    today = date(2025, 2, 5)
 
     # Each value is "data:image/png;base64,XXXXX"
     def strip_prefix(data_url):
@@ -686,7 +739,8 @@ def download_flagged_claims_report(request):
     qs = Last24Hour.objects.filter(
         Q(hospital_id__in=suspicious_ids) &
         Q(hospital_type='P') &
-        Q(preauth_initiated_date__date=today)
+        Q(preauth_initiated_date__date__gte=start_date) &
+        Q(preauth_initiated_date__date__lte=end_date)
     )
     if districts:
         qs = qs.filter(district_name__in=districts)
