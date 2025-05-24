@@ -501,9 +501,14 @@ $(document).ready(function() {
     $(document).on('click', '.card.family-id .download-btn', function(e){
         e.preventDefault();
         const $card    = $(this).closest('.card.family-id');
-        let   url      = $card.data('download-url');
+        let   baseUrl      = $card.data('download-url');
         const district = $card.data('district') || '';
-        if (district) url += '?district=' + encodeURIComponent(district);
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
     
@@ -511,9 +516,14 @@ $(document).ready(function() {
     $(document).on('click', '.modal-container .table-download-btn', function(e){
         e.preventDefault();
         const $modal   = $(this).closest('.modal-container');
-        let   url      = $modal.data('excel-url');
+        let   baseUrl      = $modal.data('excel-url');
         const district = $modal.data('district') || '';
-        if (district) url += '?district=' + encodeURIComponent(district);
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
 
@@ -1744,7 +1754,8 @@ $(document).ready(function() {
                 });
             },
             loadTableData: function(districts) {
-                const url = `/get-family-id-cases-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                const {startDate, endDate} = getDateRange();
+                const url = `/get-family-id-cases-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -1777,17 +1788,18 @@ $(document).ready(function() {
                 return this.colorMap[familyId];
             },
             loadCharts: function(districts) {
+                const {startDate, endDate} = getDateRange();
                 // Bar Chart
-                fetch(`/get-family-violations-by-district/?district=${districts.join(',')}`)
+                fetch(`/get-family-violations-by-district/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderBarChart('familyViolationsChart', data));
                 
                 // Pie Charts
-                fetch(`/get-family-age-distribution/?district=${districts.join(',')}`)
+                fetch(`/get-family-age-distribution/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('familyAgeChart', data, 'familyAgeCallouts'));
                 
-                fetch(`/get-family-gender-distribution/?district=${districts.join(',')}`)
+                fetch(`/get-family-gender-distribution/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('familyGenderChart', data, 'familyGenderCallouts'));
             },

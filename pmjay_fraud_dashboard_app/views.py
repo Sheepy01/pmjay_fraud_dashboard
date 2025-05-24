@@ -1410,9 +1410,17 @@ def get_family_id_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    if startDate and endDate:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
+        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
+    else:
+        today = timezone.localdate()
+        start_date = end_date = today
+
+    yesterday = end_date - timedelta(days=1)
+    thirty_days_ago = end_date - timedelta(days=30)
     
     # Find suspicious families (same family, same day, >2 cases)
     suspicious_families = (
@@ -1428,7 +1436,8 @@ def get_family_id_cases(request):
     cases = Last24Hour.objects.filter(
         Q(hospital_type='P') &
         Q(family_id__in=[x['family_id'] for x in suspicious_families]) &
-        Q(preauth_initiated_date__date=today)
+        Q(preauth_initiated_date__date__gte=start_date) &
+        Q(preauth_initiated_date__date__lte=end_date)
     )
     
     if districts:
@@ -1503,13 +1512,22 @@ def get_family_id_cases_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
     ).filter(
-        day=today
+        day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
@@ -1520,7 +1538,8 @@ def get_family_id_cases_details(request):
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date=today
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     ).order_by('family_id', 'preauth_initiated_date')
     
     if districts:
@@ -1562,13 +1581,22 @@ def get_family_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
     ).filter(
-        day=today
+        day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
@@ -1579,7 +1607,8 @@ def get_family_violations_by_district(request):
     result = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date=today
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     )
     
     if districts:
@@ -1599,13 +1628,22 @@ def get_family_violations_demographics(request, type):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
     ).filter(
-        day=today
+        day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
         count=Count('id')
     ).filter(
@@ -1616,7 +1654,8 @@ def get_family_violations_demographics(request, type):
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date=today
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     )
     
     if districts:
@@ -2938,8 +2977,17 @@ def download_family_id_cases_excel(request):
     district_param = request.GET.get('district', '')
     districts     = district_param.split(',') if district_param else []
 
-    # 2) today
-    today = date(2025, 2, 5)
+    # 2) date
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # 3) build the subquery & base queryset
     subq = (
@@ -2955,7 +3003,8 @@ def download_family_id_cases_excel(request):
         .filter(
             Q(hospital_type='P'),
             Q(family_id__in=Subquery(subq)),
-            Q(preauth_initiated_date__date=today)
+            Q(preauth_initiated_date__date__gte=start_date) &
+            Q(preauth_initiated_date__date__lte=end_date)
         )
         .order_by('family_id', 'preauth_initiated_date')
     )
@@ -3028,6 +3077,16 @@ def download_family_id_cases_report(request):
     # 1) inputs
     district_param = request.POST.get('district','')
     districts      = [d for d in district_param.split(',') if d]
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # strip base64 helper
     def strip_b64(key):
@@ -3040,8 +3099,6 @@ def download_family_id_cases_report(request):
     age_callouts     = request.POST.get('age_callouts','')
     gender_callouts  = request.POST.get('gender_callouts','')
 
-    # 2) full queryset (no pagination)
-    today = date(2025, 2, 5)
     # subquery families with >2 claims today
     freq_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
@@ -3052,7 +3109,8 @@ def download_family_id_cases_report(request):
     qs = Last24Hour.objects.filter(
         Q(hospital_type='P'),
         Q(family_id__in=Subquery(freq_families)),
-        Q(preauth_initiated_date__date=today)
+        Q(preauth_initiated_date__date__gte=start_date) &
+        Q(preauth_initiated_date__date__lte=end_date)
     ).order_by('family_id','preauth_initiated_date')
 
     if districts:
