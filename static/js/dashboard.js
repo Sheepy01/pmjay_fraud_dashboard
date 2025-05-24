@@ -285,6 +285,11 @@ $(document).ready(function() {
 
         // 3) Re-run all the card-updaters
         updateFlaggedClaims(selectedDistricts, startDate, endDate);
+        updateHighValueClaims(selectedDistricts, startDate, endDate);
+        updateHospitalBedCases(selectedDistricts, startDate, endDate);
+        updateFamilyIdCases(selectedDistricts, startDate, endDate);
+        updateGeoAnomalies(selectedDistricts, startDate, endDate);
+        updateOphthalmology(selectedDistricts, startDate, endDate);
     });
 
     function updateFlaggedClaims(districts = [], startDate = '', endDate = '') {
@@ -367,10 +372,6 @@ $(document).ready(function() {
                 $('.high-value .medical .time-metric:eq(0) .time-value').text(response.medical.count.toLocaleString());
                 $('.high-value .medical .time-metric:eq(1) .time-value').text(response.medical.yesterday.toLocaleString());
                 $('.high-value .medical .time-metric:eq(2) .time-value').text(response.medical.last_30_days.toLocaleString());
-                
-                // Debug verification
-                // console.log("Surgical value set to:", response.surgical.count);
-                // console.log("Medical value set to:", response.medical.count);
             },
             error: function(xhr, status, error) {
                 console.error("Error:", error);
@@ -384,11 +385,12 @@ $(document).ready(function() {
         const $card     = $(this).closest('.card.high-value');
         const baseUrl   = $card.data('download-url');
         const district  = $card.data('district') || '';
-      
-        let url = baseUrl;
-        if (district) {
-          url += '?district=' + encodeURIComponent(district);
-        }
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
 
@@ -1124,8 +1126,9 @@ $(document).ready(function() {
                 this.loadCharts(caseType, districts);
             },
             loadTableData: function(caseType, districts) {
+                const { startDate, endDate } = getDateRange();
                 this.currentCaseType = caseType;
-                const url = `/get-high-value-claims-details/?case_type=${caseType}&district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                const url = `/get-high-value-claims-details/?case_type=${caseType}&district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -1151,6 +1154,7 @@ $(document).ready(function() {
                     .catch(error => console.error('Table load error:', error));
             },
             loadCharts: function(caseType, districts) {
+                const { startDate, endDate } = getDateRange();
                 const container = document.getElementById('highValueCharts');
                 if(caseType == 'all') {
                     container.innerHTML = `
@@ -1253,16 +1257,16 @@ $(document).ready(function() {
                 }
         
                 if (caseType === 'all') {
-                    this.loadChartData('all', districts, 'highValueAllChart');
-                    this.loadChartData('medical', districts, 'highValueMedicalChart');
-                    this.loadChartData('surgical', districts, 'highValueSurgicalChart');
+                    this.loadChartData('all', districts, 'highValueAllChart', startDate, endDate);
+                    this.loadChartData('medical', districts, 'highValueMedicalChart', startDate, endDate);
+                    this.loadChartData('surgical', districts, 'highValueSurgicalChart', startDate, endDate);
                     
                     this.loadDemographics('all', districts, 'highValueAllAgeChart', 'highValueAllGenderChart', 
-                        'highValueAllAgeCallouts', 'highValueAllGenderCallouts');
+                        'highValueAllAgeCallouts', 'highValueAllGenderCallouts', startDate, endDate);
                     this.loadDemographics('medical', districts, 'highValueMedicalAgeChart', 'highValueMedicalGenderChart', 
-                        'highValueMedicalAgeCallouts', 'highValueMedicalGenderCallouts');
+                        'highValueMedicalAgeCallouts', 'highValueMedicalGenderCallouts', startDate, endDate);
                     this.loadDemographics('surgical', districts, 'highValueSurgicalAgeChart', 'highValueSurgicalGenderChart', 
-                        'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts');
+                        'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts', startDate, endDate);
                 } else {
                     const cap = this.capitalize(caseType);
                     this.loadChartData(caseType, districts, `highValue${cap}Chart`);
@@ -1273,8 +1277,8 @@ $(document).ready(function() {
                         `highValue${cap}GenderCallouts`);
                 }
             },
-            loadChartData: function(caseType, districts, canvasId) {
-                const url = `/get-high-value-claims-by-district/?case_type=${caseType}&district=${districts.join(',')}`;
+            loadChartData: function(caseType, districts, canvasId, startDate, endDate) {
+                const url = `/get-high-value-claims-by-district/?case_type=${caseType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -1337,13 +1341,13 @@ $(document).ready(function() {
                     }
                 });
             },
-            loadDemographics: function(caseType, districts, ageCanvasId, genderCanvasId, ageCalloutId, genderCalloutId) {
-                fetch(`/get-high-value-age-distribution/?case_type=${caseType}&district=${districts.join(',')}`)
+            loadDemographics: function(caseType, districts, ageCanvasId, genderCanvasId, ageCalloutId, genderCalloutId, startDate, endDate) {
+                fetch(`/get-high-value-age-distribution/?case_type=${caseType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart(ageCanvasId, data, ageCalloutId))
                     .catch(error => console.error('Age data error:', error));
         
-                fetch(`/get-high-value-gender-distribution/?case_type=${caseType}&district=${districts.join(',')}`)
+                fetch(`/get-high-value-gender-distribution/?case_type=${caseType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart(genderCanvasId, data, genderCalloutId))
                     .catch(error => console.error('Gender data error:', error));

@@ -708,8 +708,8 @@ def download_flagged_claims_excel(request):
 
 @require_http_methods(["GET", "POST"])
 def download_flagged_claims_report(request):
-    startDate = request.GET.get('start_date')
-    endDate = request.GET.get('end_date')
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
 
     try:
         start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
@@ -870,20 +870,28 @@ def download_flagged_claims_report(request):
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    if startDate and endDate:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
+        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
+    else:
+        today = timezone.localdate()
+        start_date = end_date = today
     
     # Base queryset with today's filter
     cases = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added today filter
+        preauth_initiated_date__date__gte=start_date,  # Added today filter
+        preauth_initiated_date__date__lte=end_date,  # Added today filter
     )
     
     if districts:
         cases = cases.filter(district_name__in=districts)
 
     # Time thresholds based on today
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
+    yesterday = end_date - timedelta(days=1)
+    thirty_days_ago = end_date - timedelta(days=30)
 
     # Surgical cases filter (≥100,000)
     surgical_cases = cases.filter(
@@ -937,12 +945,24 @@ def get_high_value_claims_details(request):
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
-    today = date(2025, 2, 5)
+    
+    # 1. Parse start_date / end_date from GET
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added date filter
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date,
     )
 
     # Case type filters (preserve original logic)
@@ -999,12 +1019,24 @@ def get_high_value_claims_by_district(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+
+    # 1. Parse start_date / end_date from GET
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added date filter
+        preauth_initiated_date__date__gte=start_date,  # Added date filter
+        preauth_initiated_date__date__lte=end_date,  # Added date filter
     )
 
     # Apply value thresholds (original logic preserved)
@@ -1041,12 +1073,23 @@ def get_high_value_age_distribution(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+    # 1. Parse start_date / end_date from GET
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added date filter
+        preauth_initiated_date__date__gte=start_date,  # Added date filter
+        preauth_initiated_date__date__lte=end_date  # Added date filter
     )
 
     # Case type filter (original logic preserved)
@@ -1099,12 +1142,23 @@ def get_high_value_gender_distribution(request):
     case_type = request.GET.get('case_type', 'all').upper()
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+    # 1. Parse start_date / end_date from GET
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=today  # Added date filter
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
     )
 
     # Case type filter (original logic preserved)
@@ -2477,10 +2531,24 @@ def download_high_value_claims_excel(request):
     # 1) read district filter
     district_param = request.GET.get('district', '')
     districts     = district_param.split(',') if district_param else []
-    today = date(2025, 2, 5)
+   
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # 2) base queryset for P-type hospitals
-    qs = Last24Hour.objects.filter(hospital_type='P', preauth_initiated_date__date=today)
+    qs = Last24Hour.objects.filter(
+        hospital_type='P', 
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+        )
     if districts:
         qs = qs.filter(district_name__in=districts)
 
@@ -2556,11 +2624,20 @@ def download_high_value_claims_excel(request):
 @require_POST
 @csrf_protect
 def download_high_value_claims_report(request):
-    today = date(2025, 2, 5)
     # 1) Read inputs
     case_type      = request.POST.get('case_type', 'all').lower()   # 'all','surgical','medical'
     district_param = request.POST.get('district', '')
     districts      = [d for d in district_param.split(',') if d]
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # 2) Helper for charts
     def strip_b64(key):
@@ -2581,7 +2658,11 @@ def download_high_value_claims_report(request):
     medical_gen_callouts  = request.POST.get('medical_gender_callouts','')
 
     # 3) Build querysets based on case_type
-    base_qs = Last24Hour.objects.filter(hospital_type='P', preauth_initiated_date__date=today)
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P', 
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+        )
     surgical_qs = base_qs.none()
     medical_qs  = base_qs.none()
 
