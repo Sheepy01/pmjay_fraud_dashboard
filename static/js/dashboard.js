@@ -437,12 +437,16 @@ $(document).ready(function() {
     $(document).on('click', '.card.hospital-beds .download-btn', function(e){
         e.preventDefault();
         const $card    = $(this).closest('.card.hospital-beds');
-        let   url      = $card.data('download-url');
+        const baseUrl  = $card.data('download-url');
         const district = $card.data('district') || '';
-      
-        if (district) url += '?district=' + encodeURIComponent(district);
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
-      });
+    });
       
       // Modal Excel download (works for any card)
       $(document).on('click', '.modal-container .table-download-btn', function(e){
@@ -1511,7 +1515,8 @@ $(document).ready(function() {
                 });
             },
             loadTableData: function(districts) {
-                const url = `/get-hospital-bed-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                const { startDate, endDate } = getDateRange();
+                const url = `/get-hospital-bed-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -1535,7 +1540,8 @@ $(document).ready(function() {
                     .catch(error => console.error('Table load error:', error));
             },
             loadChartData: function(districts) {
-                fetch(`/hospital-violations-by-district/?district=${districts.join(',')}`)
+                const { startDate, endDate } = getDateRange();
+                fetch(`/hospital-violations-by-district/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderBarChart(data));
             },

@@ -1204,13 +1204,21 @@ def get_high_value_gender_distribution(request):
         'colors': colors
     })
 
+
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
-    today = date(2025, 2, 5)
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    if startDate and endDate:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
+        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
+    else:
+        today = timezone.localdate()
+        start_date = end_date = today
+    yesterday = end_date - timedelta(days=1)
+    thirty_days_ago = end_date - timedelta(days=30)
 
     # 1. Load bed strengths
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -1226,7 +1234,7 @@ def get_hospital_bed_cases(request):
         )
 
     # 3. Today: compute per-hospital counts and find violations
-    today_adm = admissions_qs(today, today)
+    today_adm = admissions_qs(start_date, end_date)
     today_counts = today_adm.values('hospital_id').annotate(count=Count('id'))
     violating_today = [a['hospital_id'] for a in today_counts
                        if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
@@ -1238,7 +1246,7 @@ def get_hospital_bed_cases(request):
                             if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
 
     # 5. Last 30 days: annotate per hospital per day, then distinct hospital overflow
-    range_adm = admissions_qs(thirty_days_ago, today)
+    range_adm = admissions_qs(thirty_days_ago, start_date)
     # annotate day and count
     from django.db.models.functions import Coalesce, TruncDate
 
@@ -1287,7 +1295,16 @@ def get_hospital_bed_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     # 1. Load bed strengths
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -1297,8 +1314,10 @@ def get_hospital_bed_details(request):
     violations = (
         Last24Hour.objects
         .filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+            Q(admission_date__date__gte=start_date) &
+            Q(admission_date__date__lte=end_date) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
         .values('hospital_id', 'hospital_name', 'district_name', 'state_name')
         .annotate(
@@ -1355,13 +1374,24 @@ def hospital_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     result = (
         Last24Hour.objects
         .filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+            Q(admission_date__date__gte=start_date) &
+            Q(admission_date__date__lte=end_date) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
         .values('district_name')
         .annotate(violation_count=Count('hospital_id', distinct=True))
@@ -2745,8 +2775,17 @@ def download_hospital_bed_cases_excel(request):
     district_param = request.GET.get('district', '')
     districts     = district_param.split(',') if district_param else []
 
-    # 2) Today’s date
-    today = date(2025, 2, 5)
+    # 2) date
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # 3) Build bed_strength lookup
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -2756,8 +2795,10 @@ def download_hospital_bed_cases_excel(request):
     qs = (
         Last24Hour.objects
         .filter(
-            Q(admission_date__date=today) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+            Q(admission_date__date__gte=start_date) &
+            Q(admission_date__date__lte=end_date) |
+            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
         .values('hospital_id','hospital_name','district_name','state_name')
         .annotate(
@@ -2820,21 +2861,32 @@ def download_hospital_bed_report(request):
     # 1) Read inputs
     district_param = request.POST.get('district','')
     districts = [d for d in district_param.split(',') if d]
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
 
     # strip base64
     hc = request.POST.get('hospital_chart','')
     hospital_chart_b64 = hc.split('base64,',1)[1] if 'base64,' in hc else ''
 
     # 2) Build full violations list (no pagination)
-    today = date(2025, 2, 5)
     beds = {b['hospital_id']: b['bed_strength']
             for b in HospitalBeds.objects.values('hospital_id','bed_strength')}
 
     raw = (
       Last24Hour.objects
       .filter(
-        Q(admission_date__date=today) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
       )
       .values('hospital_id','hospital_name','district_name','state_name')
       .annotate(
