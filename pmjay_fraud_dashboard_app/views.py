@@ -1717,9 +1717,17 @@ def get_geo_anomalies(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
-    yesterday = today - timedelta(days=1)
-    thirty_days_ago = today - timedelta(days=30)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    if startDate and endDate:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
+        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
+    else:
+        today = timezone.localdate()
+        start_date = end_date = today
+
+    yesterday = end_date - timedelta(days=1)
+    thirty_days_ago = end_date - timedelta(days=30)
 
     # Base queryset - only private hospitals with state mismatches
     anomalies = Last24Hour.objects.filter(
@@ -1734,8 +1742,10 @@ def get_geo_anomalies(request):
 
     # Today's count
     today_anomalies = anomalies.filter(
-        Q(admission_date__date=today) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     )
     
     # Yesterday's count
@@ -1772,15 +1782,26 @@ def get_geo_anomalies_details(request):
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         state_name__isnull=False,
         hospital_state_name__isnull=False
     ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date=today) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     ).order_by('state_name', 'hospital_state_name')
     
     if districts:
@@ -1819,15 +1840,26 @@ def get_geo_violations_by_state(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
     
-    today = date(2025, 2, 5)
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         state_name__isnull=False,
         hospital_state_name__isnull=False
     ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date=today) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     )
     
     if districts:
@@ -1843,13 +1875,28 @@ def get_geo_violations_by_state(request):
 def get_geo_violations_demographics(request, type):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    today = timezone.datetime.now()
+
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
     
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
         state_name__isnull=False,
         hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(preauth_initiated_date__date = today)
+    ).exclude(state_name=F('hospital_state_name')).filter(
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+    ).order_by('state_name', 'hospital_state_name')
     
     if districts:
         base_query = base_query.filter(district_name__in=districts)
@@ -3160,8 +3207,17 @@ def download_geo_anomalies_excel(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
-    # 2) Today’s date
-    today = date(2025, 2, 5)
+    # 2) date
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
+    except ValueError:
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = date.today()
 
     # 3) Query exactly as in get_geo_anomalies_details, but no pagination
     qs = Last24Hour.objects.filter(
@@ -3171,8 +3227,10 @@ def download_geo_anomalies_excel(request):
     ).exclude(
         state_name=F('hospital_state_name')
     ).filter(
-        Q(admission_date__date=today) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     ).order_by('state_name','hospital_state_name')
 
     if districts:
@@ -3237,6 +3295,17 @@ def download_geo_anomalies_pdf_report(request):
     district_param = request.POST.get('district','')
     districts      = [d for d in district_param.split(',') if d]
 
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
+    except ValueError:
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = date.today()
+
     # helper to strip base64
     def strip_b64(key):
         v = request.POST.get(key,'')
@@ -3249,14 +3318,15 @@ def download_geo_anomalies_pdf_report(request):
     gen_c      = request.POST.get('geo_gender_callouts','')
 
     # 2) Fetch full anomalies (no pagination)
-    today = date(2025, 2, 5)
     qs = Last24Hour.objects.filter(
         hospital_type='P',
         state_name__isnull=False,
         hospital_state_name__isnull=False
     ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date=today) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date=today)
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     )
     if districts:
         qs = qs.filter(district_name__in=districts)

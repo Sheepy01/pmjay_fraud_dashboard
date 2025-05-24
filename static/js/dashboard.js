@@ -552,9 +552,14 @@ $(document).ready(function() {
     $(document).on('click', '.card.geo-anomalies .download-btn', function(e){
         e.preventDefault();
         const $card    = $(this).closest('.card.geo-anomalies');
-        let   url      = $card.data('download-url');
+        let   baseUrl      = $card.data('download-url');
         const district = $card.data('district') || '';
-        if (district) url += '?district=' + encodeURIComponent(district);
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
     
@@ -2069,7 +2074,8 @@ $(document).ready(function() {
                 });
             },
             loadTableData: function(districts) {
-                const url = `/get-geo-anomalies-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                const {startDate, endDate} = getDateRange();
+                const url = `/get-geo-anomalies-details/?district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}&start_date=${startDate}&end_date=${endDate}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -2094,17 +2100,18 @@ $(document).ready(function() {
                     .catch(error => console.error('Table load error:', error));
             },
             loadCharts: function(districts) {
+                const {startDate, endDate} = getDateRange();
                 // Bar Chart
-                fetch(`/get-geo-violations-by-state/?district=${districts.join(',')}`)
+                fetch(`/get-geo-violations-by-state/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderBarChart('geoViolationsChart', data));
                 
                 // Pie Charts
-                fetch(`/get-geo-demographics/age/?district=${districts.join(',')}`)
+                fetch(`/get-geo-demographics/age/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('geoAgeChart', data, 'geoAgeCallouts'));
                 
-                fetch(`/get-geo-demographics/gender/?district=${districts.join(',')}`)
+                fetch(`/get-geo-demographics/gender/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('geoGenderChart', data, 'geoGenderCallouts'));
             },
