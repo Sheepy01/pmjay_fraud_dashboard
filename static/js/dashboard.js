@@ -612,11 +612,15 @@ $(document).ready(function() {
     $(document).on('click', '.card.ophthalmology .download-btn', function(e) {
         e.preventDefault();
         const $card   = $(this).closest('.card.ophthalmology');
-        let   url     = $card.data('download-url');
+        let   baseUrl     = $card.data('download-url');
         const district= $card.data('district') || '';
-        // default “all” sheet
-        url += `?type=all`;
-        if (district) url += `&district=${encodeURIComponent(district)}`;
+        baseUrl += `?type=all`;
+        const {startDate, endDate} = getDateRange();
+        const params = new URLSearchParams();
+        if (district)           params.append('district',   district);
+        if (startDate)          params.append('start_date', startDate);
+        if (endDate)            params.append('end_date',   endDate);
+        const url = baseUrl + (params.toString() ? `&${params.toString()}` : '');
         window.location.href = url;
     });
     
@@ -2446,7 +2450,9 @@ $(document).ready(function() {
                 });
             },
             loadTableData: function(violationType, districts) {
-                const url = `/get-ophthalmology-details/?type=${violationType}&district=${districts.join(',')}&page=${this.currentPage}&page_size=${this.pageSize}`;
+                console.log(`Loading table data for violation type: ${violationType}`);
+                const {startDate, endDate} = getDateRange();
+                const url = `/get-ophthalmology-details/?type=${violationType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}&page=${this.currentPage}&page_size=${this.pageSize}`;
                 
                 fetch(url)
                     .then(response => response.json())
@@ -2630,13 +2636,15 @@ $(document).ready(function() {
                 }
             },
             loadBarChart: function(violationType, districts, canvasId, legendId) {
-                fetch(`/get-ophthalmology-distribution/?type=${violationType}&district=${districts.join(',')}`)
+                const {startDate, endDate} = getDateRange();
+                fetch(`/get-ophthalmology-distribution/?type=${violationType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderBarChart(canvasId, legendId, data, violationType))
                     .catch(error => console.error('Error loading bar chart:', error));
             },
             loadPieCharts: function(violationType, districts) {
-                fetch(`/get-ophthalmology-demographics/age/?violation_type=${violationType}&district=${districts.join(',')}`)
+                const {startDate, endDate} = getDateRange();
+                fetch(`/get-ophthalmology-demographics/age/?violation_type=${violationType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => {
                         if (!response.ok) throw new Error('Network error');
                         return response.json();
@@ -2652,7 +2660,7 @@ $(document).ready(function() {
                             '<div class="chart-error">Failed to load age data</div>';
                     });
                     
-                fetch(`/get-ophthalmology-demographics/gender/?violation_type=${violationType}&district=${districts.join(',')}`)
+                fetch(`/get-ophthalmology-demographics/gender/?violation_type=${violationType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart(
                         `ophth${this.capitalize(violationType)}GenderChart`, 
