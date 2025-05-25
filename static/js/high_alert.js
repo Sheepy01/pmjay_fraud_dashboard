@@ -1,5 +1,6 @@
 // static/js/high_alert.js
 $(function(){
+    let currentStartDate = null, currentEndDate = null;
     // ======================
     // Generated Timestamp
     // ======================
@@ -11,6 +12,70 @@ $(function(){
         document.querySelector('#generatedOn .gen-date').textContent = now.toLocaleDateString('en-GB', dateOpts);
         document.querySelector('#generatedOn .gen-time').textContent = now.toLocaleTimeString('en-GB', timeOpts);
     })();
+
+    function daysInMonth(year, month) {
+        return new Date(year, month, 0).getDate();
+    }
+
+    function getDateRange() {
+        const pad = (s) => String(s).padStart(2, '0');
+        const y1 = $('#from-year').val(),  m1 = pad($('#from-month').val()), d1 = pad($('#from-day').val());
+        const y2 = $('#to-year').val(),    m2 = pad($('#to-month').val()),   d2 = pad($('#to-day').val());
+        return {
+            startDate: `${y1}-${m1}-${d1}`,
+            endDate:   `${y2}-${m2}-${d2}`
+        };
+    }
+
+    function populateDateDropdowns() {
+        const today = new Date();
+        const curYear = today.getFullYear();
+        const years = [];
+        for (let y = 2000; y <= curYear; y++) years.push(y);
+
+        // helper to fill one set
+        function fillOne(prefix, defaultDate) {
+            const [m, d, y] = [defaultDate.getMonth() + 1, defaultDate.getDate(), defaultDate.getFullYear()];
+            const monthSel = $(`#${prefix}-month`);
+            const daySel   = $(`#${prefix}-day`);
+            const yearSel  = $(`#${prefix}-year`);
+
+            // months
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            monthSel.empty();
+            monthNames.forEach((name, idx) => {
+                monthSel.append(`<option value="${idx+1}">${name}</option>`);
+            });
+            
+
+            // years
+            yearSel.empty();
+            years.forEach(yr => yearSel.append(`<option value="${yr}">${yr}</option>`));
+
+            // set defaults
+            monthSel.val(m);
+            yearSel.val(y);
+
+            // populate days based on month/year
+            function refreshDays() {
+            const mm = parseInt(monthSel.val(), 10);
+            const yy = parseInt(yearSel.val(), 10);
+            const dim = daysInMonth(yy, mm);
+            daySel.empty();
+            for (let dd = 1; dd <= dim; dd++) daySel.append(`<option value="${dd}">${dd}</option>`);
+            daySel.val(d);
+            }
+            refreshDays();
+
+            // when month or year changes, refresh days (and clamp day)
+            monthSel.add(yearSel).on('change', refreshDays);
+        }
+
+        // fill both from/to with today
+        populateDateDropdowns = null; // prevent re-definition
+        fillOne('from', today);
+        fillOne('to', today);
+    }
 
     // ======================
     // Sidebar Toggle (jQuery)
@@ -87,6 +152,21 @@ $(function(){
         });
     }
 
+    $('#apply-date-filter').on('click', function() {
+        const {startDate, endDate} = getDateRange();
+        if (new Date(startDate) > new Date(endDate)) {
+            alert('Start date cannot be after end date.');
+            return;
+        }
+
+        currentStartDate = startDate;
+        currentEndDate = endDate;
+
+        loadTableData(1);
+        loadChartData();
+        loadDemographics();
+    });
+
     // ======================
     // Table Handling
     // ======================
@@ -95,13 +175,18 @@ $(function(){
     const paginationControls = $('.pagination-controls');
 
     function loadTableData(page=1) {
+        const params = {
+            page: page,
+            page_sise: 50,
+            district: selectedDistricts.join(',')
+        };
+        if (currentStartDate && currentEndDate) {
+            params.start_date = currentStartDate;
+            params.end_date = currentEndDate;
+        }
         $.ajax({
             url: '/high-alert/',
-            data: {
-                page: page,
-                district: selectedDistricts.join(','),
-                page_size: 50
-            },
+            data: params,
             success: function(response) {
                 renderTable(response.data);
                 renderPagination(response.pagination);
@@ -112,18 +197,28 @@ $(function(){
     // Excel Export Handler
     $('#exportExcel').on('click', function() {
         const districts = $('#districtDropdown').val() || [];
-        const params = new URLSearchParams({
-            district: districts.join(',')
-        });
-        
+
+        // Build query params
+        const params = new URLSearchParams();
+        if (districts.length) {
+            params.set('district', districts.join(','));
+        }
+        if (currentStartDate) {
+            params.set('start_date', currentStartDate);
+        }
+        if (currentEndDate) {
+            params.set('end_date', currentEndDate);
+        }
+
         // Create temporary link
         const link = document.createElement('a');
-        link.href = `${window.HIGH_ALERT_URLS.excel}?${params}`;
+        link.href = `${window.HIGH_ALERT_URLS.excel}?${params.toString()}`;
         link.download = 'high_alerts_export.xlsx';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     });
+
 
     // Add CSRF token handling
     function getCSRFToken() {
@@ -131,6 +226,7 @@ $(function(){
     }
 
     function generateHighAlertPDF() {
+        const {startDate, endDate} = getDateRange();
         const loader = document.getElementById('pdfLoader');
         const progressBar = document.getElementById('pdfProgressBar');
         const progressTxt = document.getElementById('pdfProgressText');
@@ -157,6 +253,9 @@ $(function(){
         // Build payload
         const districts = $('#districtDropdown').val() || [];
         const fd = new FormData();
+        if(districts)    fd.append('district', districts);
+        if(startDate)    fd.append('start_date', startDate);
+        if(endDate)      fd.append('end_date', endDate);
         
         // Add CSRF token
         fd.append('csrfmiddlewaretoken', getCSRFToken());
@@ -347,9 +446,17 @@ $(function(){
     }
 
     function loadChartData() {
+        const params = {
+            district: selectedDistricts.join(','),
+        };
+        if (currentStartDate && currentEndDate) {
+            params.start_date = currentStartDate;
+            params.end_date = currentEndDate;
+        }
+
         $.ajax({
             url: window.HIGH_ALERT_URLS.districts,
-            data: { district: selectedDistricts.join(',') },
+            data: params,
             success: data => {
                 districtChart.data.labels = data.labels;
                 districtChart.data.datasets[0].data = data.counts;
@@ -359,10 +466,17 @@ $(function(){
     }
 
     function loadDemographics() {
+        const params = {
+            district: selectedDistricts.join(','),
+        };
+        if (currentStartDate && currentEndDate) {
+            params.start_date = currentStartDate;
+            params.end_date = currentEndDate;
+        }
         ['age', 'gender'].forEach(type => {
             $.ajax({
                 url: window.HIGH_ALERT_URLS.demographics.replace('type', type),
-                data: { district: selectedDistricts.join(',') },
+                data: params,
                 success: data => {
                     const chart = type === 'age' ? ageChart : genderChart;
                     chart.data.labels = data.labels;
@@ -390,6 +504,7 @@ $(function(){
     function initializeDashboard() {
         loadDistricts();
         initDistrictDropdown();
+        populateDateDropdowns();
         initCharts();
         loadAllVisualizations();
     }
