@@ -1,25 +1,19 @@
+from .models import Last24Hour, SuspiciousHospital, HospitalBeds, UploadHistory
 from openpyxl.styles import PatternFill, Font, Border, Side
 from django.contrib.auth.decorators import login_required
 from django.db.models import Case, When, Value, CharField
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
-from .models import Last24Hour, SuspiciousHospital, HospitalBeds
 from django.contrib.auth import authenticate, login, logout
 from django.views.decorators.http import require_http_methods
 from django.template.loader import render_to_string
-from django.contrib.auth import login as auth_login
-from django.db.models import Sum, Q, Avg, F, Func, Count, Subquery, Max, OuterRef, Value, BooleanField, Exists, IntegerField, ExpressionWrapper, DateTimeField, TimeField
+from django.db.models import Sum, Q, F, Func, Count, Subquery, Max, OuterRef, Value, BooleanField, Exists, IntegerField
 from datetime import date
 import random
-from weasyprint.text.fonts import FontConfiguration
 from django.http import JsonResponse, HttpResponse
-from django.db.models.functions import TruncDate, ExtractHour
 import re
-from django.utils.timezone import now, timedelta
-from django.conf import settings
-from django.core.management import call_command
+from django.utils.timezone import timedelta
 from datetime import date
-import os
 from django.shortcuts import render, redirect
 import datetime
 from django.db.models.functions import Cast
@@ -29,9 +23,13 @@ import pandas as pd
 from weasyprint import HTML
 from datetime import timedelta
 from django.shortcuts import render
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 import io
 from django.contrib import messages
+from django.db import transaction
+import numpy as np
+import sys
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -205,11 +203,12 @@ def import_data_view(request):
         return redirect('dashboard')
     
 def data_management(request):
-    return render(request, 'data_management.html', {'active_page': 'data_management'})
+    histories = UploadHistory.objects.in_bulk(field_name='model_type')
+    return render(request, 'data_management.html', {
+        'active_page': 'data_management',
+        'file_upload_histories': histories,
+    })
 
-from django.db import transaction
-import numpy as np
-import sys
 @require_POST
 def upload_management_data(request):
     file = request.FILES.get('file')
@@ -261,6 +260,10 @@ def upload_management_data(request):
                     for _, row in df.iterrows()
                 ]
                 SuspiciousHospital.objects.bulk_create(hospitals)
+                UploadHistory.objects.update_or_create(
+                    model_type='suspicious',
+                    defaults={'filename': file.name}
+                )
                 
                 return JsonResponse({
                     'status': 'success',
@@ -305,6 +308,10 @@ def upload_management_data(request):
                         }, status=400)
                         
                 HospitalBeds.objects.bulk_create(beds)
+                UploadHistory.objects.update_or_create(
+                    model_type='beds',
+                    defaults={'filename': file.name}
+                )
                 
             return JsonResponse({
                 'status': 'success',
@@ -316,6 +323,21 @@ def upload_management_data(request):
             'status': 'error',
             'message': f'{str(e)} (Line {sys.exc_info()[-1].tb_lineno if hasattr(sys, "exc_info") else "N/A"})'
         }, status=400)
+    
+@login_required
+def latest_uploads(request):
+    """
+    Return JSON mapping of model_type -> {filename, uploaded_at}
+    """
+    qs = UploadHistory.objects.all()
+    data = {}
+    for hist in qs:
+        data[hist.model_type] = {
+            'filename': hist.filename,
+            # ISO timestamp is easiest for JS to parse, but we can shorten if you like
+            'uploaded_at': hist.uploaded_at.strftime('%Y-%m-%d %H:%M'),
+        }
+    return JsonResponse(data)
 
 def get_management_data(request):
     model_type = request.GET.get('model_type')

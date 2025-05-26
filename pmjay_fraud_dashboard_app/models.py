@@ -82,3 +82,15 @@ class HospitalBeds(models.Model):
     hospital_id = models.CharField(max_length=50, unique=True)
     hospital_name = models.CharField(max_length=50, null=True, blank=True)
     bed_strength = models.IntegerField()
+
+class UploadHistory(models.Model):
+    MODEL_CHOICES = [
+        ('suspicious', 'Suspicious Hospital List'),
+        ('beds',       'Hospital Beds'),
+    ]
+    model_type  = models.CharField(max_length=20, choices=MODEL_CHOICES, unique=True)
+    filename    = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.get_model_type_display()} uploaded at {self.uploaded_at:%Y-%m-%d %H:%M:%S}"

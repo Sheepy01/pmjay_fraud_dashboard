@@ -12,20 +12,32 @@
   <div class="upload-section">
     <!-- Suspicious Hospitals Card -->
     <div class="upload-card" id="suspiciousHospitalCard">
-        <div class="preview-container" style="display:none;"></div>
-        <h3>Suspicious Hospital List</h3>
-        <div class="file-info">
-            <span class="file-name">No file uploaded</span>
+      <div class="preview-container" style="display:none;"></div>
+      <h3>Suspicious Hospital List</h3>
+        {% with history=file_upload_histories.suspicious %}
+          <div class="file-info">
+            {% if history %}
+              <span class="file-name">
+                {{ history.filename }} (uploaded at {{ history.uploaded_at|date:"Y-m-d H:i" }})
+              </span>
+            {% else %}
+              <span class="file-name">No file uploaded</span>
+            {% endif %}
+
             <div class="file-actions">
-            <input type="file" class="file-input" data-model="suspicious" accept=".xlsx,.xls" hidden>
-            <button class="upload-btn btn-glow">
+              <input type="file" class="file-input" data-model="suspicious" accept=".xlsx,.xls" hidden>
+              <button class="upload-btn btn-glow">
                 <i class="fas fa-upload"></i> Upload
-            </button>
-            <button class="view-btn btn-glow" disabled>
+              </button>
+              <button
+                class="view-btn btn-glow"
+                {% if not history %}disabled{% endif %}
+              >
                 <i class="fas fa-eye"></i> View
-            </button>
+              </button>
             </div>
-        </div>
+          </div>
+        {% endwith %}
         <div class="progress-container">
             <div class="progress-bar"></div>
         </div>
@@ -35,18 +47,29 @@
     <div class="upload-card" id="hospitalBedsCard">
         <div class="preview-container" style="display:none;"></div>
         <h3>Hospital Beds</h3>
-        <div class="file-info">
-            <span class="file-name">No file uploaded</span>
+        {% with history=file_upload_histories.beds %}
+          <div class="file-info">
+            {% if history %}
+              <span class="file-name">
+                {{ history.filename }} (uploaded at {{ history.uploaded_at|date:"Y-m-d H:i" }})
+              </span>
+            {% else %}
+              <span class="file-name">No file uploaded</span>
+            {% endif %}
+
             <div class="file-actions">
-            <input type="file" class="file-input" data-model="beds" accept=".xlsx,.xls" hidden>
-            <button class="upload-btn btn-glow">
+              <input type="file" class="file-input" data-model="beds" accept=".xlsx,.xls" hidden>
+              <button class="upload-btn btn-glow">
                 <i class="fas fa-upload"></i> Upload
-            </button>
-            <button class="view-btn btn-glow" disabled>
+              </button>
+              <button
+                class="view-btn btn-glow"
+                {% if not history %}disabled{% endif %}>
                 <i class="fas fa-eye"></i> View
-            </button>
+              </button>
             </div>
-        </div>
+          </div>
+        {% endwith %}
         <div class="progress-container">
             <div class="progress-bar"></div>
         </div>

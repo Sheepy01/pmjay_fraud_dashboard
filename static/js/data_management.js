@@ -130,6 +130,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
+        document.addEventListener('data-updated', () => {
+            // Fetch the latest filenames/timestamps
+            fetch('/api/latest-uploads/')
+                .then(res => res.json())
+                .then(data => {
+                // For each model type, update its .file-name span
+                Object.entries(data).forEach(([modelType, info]) => {
+                    // Find the matching card
+                    const card = document.querySelector(`.upload-card .file-input[data-model="${modelType}"]`)
+                                    .closest('.upload-card');
+                    const fileNameElem = card.querySelector('.file-name');
+                    const viewBtn      = card.querySelector('.view-btn');
+                    fileNameElem.textContent = `${info.filename} (uploaded at ${info.uploaded_at})`;
+                    viewBtn.disabled = false;
+                });
+                })
+                .catch(err => console.error('Failed to refresh filenames:', err));
+            });
+
         xhr.onerror = function() {
             progressContainer.classList.remove('active');
             console.error('Upload error');

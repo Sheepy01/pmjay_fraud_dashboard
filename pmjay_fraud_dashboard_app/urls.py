@@ -56,5 +56,6 @@ urlpatterns = [
     path('data-management/', views.data_management, name='data_management'),
     path('upload-management-data/', views.upload_management_data, name='upload_management_data'),
     path('get-management-data/', views.get_management_data, name='get_management_data'),
+    path('api/latest-uploads/', views.latest_uploads, name='latest_uploads'),
     # path('export-watchlist-heatmap/', views.patient_admitted_in_watchlist_hospitals_heatmap_data, name='export_watchlist_heatmap'),
 ]
