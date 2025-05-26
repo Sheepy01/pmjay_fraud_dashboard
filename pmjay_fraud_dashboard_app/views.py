@@ -1247,7 +1247,7 @@ def get_hospital_bed_cases(request):
                             if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
 
     # 5. Last 30 days: annotate per hospital per day, then distinct hospital overflow
-    range_adm = admissions_qs(thirty_days_ago, start_date)
+    range_adm = admissions_qs(thirty_days_ago, end_date)
     # annotate day and count
     from django.db.models.functions import Coalesce, TruncDate
 
@@ -1408,104 +1408,105 @@ def hospital_violations_by_district(request):
     })
 
 def get_family_id_cases(request):
+    # 1) Parse district filter
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
-    startDate = request.GET.get('start_date')
-    endDate = request.GET.get('end_date')
-    if startDate and endDate:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
-        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
 
+    # 2) Parse date range from GET, default to today
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
+    except (ValueError, TypeError):
+        end_date = date.today()
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else end_date
+    except (ValueError, TypeError):
+        start_date = end_date
+
+    # 3) “Yesterday” and 30‐day window endpoints
     yesterday = end_date - timedelta(days=1)
     thirty_days_ago = end_date - timedelta(days=30)
-    
-    # Find suspicious families (same family, same day, >2 cases)
+
+    # 4) Build base queryset within the window
+    base_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+    )
+    if districts:
+        base_qs = base_qs.filter(district_name__in=districts)
+
+    # 5) Find families with >1 claim *per day* in that window
     suspicious_families = (
-        Last24Hour.objects
-        .filter(hospital_type='P')
+        base_qs
         .annotate(day=TruncDate('preauth_initiated_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
     )
-    
-    # Get all cases from suspicious families
-    cases = Last24Hour.objects.filter(
-        Q(hospital_type='P') &
-        Q(family_id__in=[x['family_id'] for x in suspicious_families]) &
-        Q(preauth_initiated_date__date__gte=start_date) &
-        Q(preauth_initiated_date__date__lte=end_date)
+
+    # 6) “Total” = all cases for those families in the same window
+    family_ids = [f['family_id'] for f in suspicious_families]
+    cases = base_qs.filter(family_id__in=family_ids)
+
+    # 7) Yesterday’s count: same threshold >1
+    yest_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date=yesterday
     )
-    
     if districts:
-        cases = cases.filter(district_name__in=districts)
-    
-    # Count yesterday's suspicious cases
-    yesterday_cases = Last24Hour.objects.filter(
-        Q(hospital_type='P') &
-        Q(family_id__in=(
-            Last24Hour.objects
-            .filter(
-                Q(hospital_type='P') & 
-                Q(preauth_initiated_date__date=yesterday)
-            )
-            .annotate(day=TruncDate('preauth_initiated_date'))
-            .values('family_id', 'day')
-            .annotate(count=Count('id'))
-            .filter(count__gt=2)
-            .values_list('family_id', flat=True)
-        )) &
-        Q(preauth_initiated_date__date=yesterday)
-    ).count()
-    
-    # Count violations in last 30 days
-    violations_last_30_days = (
-        Last24Hour.objects
-        .filter(
-            Q(hospital_type='P') & 
-            Q(preauth_initiated_date__gte=thirty_days_ago)
-        )
+        yest_qs = yest_qs.filter(district_name__in=districts)
+
+    yest_families = (
+        yest_qs
         .annotate(day=TruncDate('preauth_initiated_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
-        .filter(count__gt=2)
-        .values('day')
-        .distinct()
-        .count()
+        .filter(count__gt=1)
+        .values_list('family_id', flat=True)
     )
-    
-    # Prepare violation details
+    yesterday_count = yest_qs.filter(family_id__in=yest_families).count()
+
+    # 8) Last 30 days: total cases for those suspicious families
+    thr_qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date__gte=thirty_days_ago,
+        preauth_initiated_date__date__lte=end_date,
+        family_id__in=family_ids
+    )
+    if districts:
+        thr_qs = thr_qs.filter(district_name__in=districts)
+
+    violations_last_30_days = thr_qs.count()
+
+    # 9) Build detailed list for the JSON “violations” array
     violations = []
-    for family in suspicious_families:
+    for f in suspicious_families:
         hospitals = (
             Last24Hour.objects
             .filter(
-                Q(family_id=family['family_id']) &
-                Q(preauth_initiated_date__date=family['day'])
+                hospital_type='P',
+                family_id=f['family_id'],
+                preauth_initiated_date__date=f['day']
             )
             .values_list('hospital_name', flat=True)
             .distinct()
         )
-        
         violations.append({
-            'family_id': family['family_id'],
-            'date': family['day'],
-            'count': family['count'],
-            'hospitals': list(hospitals)
+            'family_id': f['family_id'],
+            'date':       f['day'].strftime('%Y-%m-%d'),
+            'count':      f['count'],
+            'hospitals':  list(hospitals)
         })
-    
-    data = {
-        'total': cases.count(),
-        'yesterday': yesterday_cases,
+
+    # 10) Return the JSON response
+    return JsonResponse({
+        'total':        cases.count(),
+        'yesterday':    yesterday_count,
         'last_30_days': violations_last_30_days,
-        'violations': violations
-    }
-    
-    return JsonResponse(data)
+        'violations':   violations
+    })
 
 def get_family_id_cases_details(request):
     district_param = request.GET.get('district', '')
