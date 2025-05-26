@@ -1,4 +1,3 @@
-from django.db.models.functions import TruncDate
 from django.db import models
 
 class SuspiciousHospital(models.Model):
