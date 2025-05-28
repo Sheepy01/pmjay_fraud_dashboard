@@ -20,6 +20,7 @@ urlpatterns = [
     path('get-high-value-claims-by-district/', views.get_high_value_claims_by_district, name='get_high_value_claims_by_district'),
     path('get-high-value-age-distribution/', views.get_high_value_age_distribution, name='get_high_value_age_distribution'),
     path('get-high-value-gender-distribution/', views.get_high_value_gender_distribution, name='get_high_value_gender_distribution'),
+    path('api/high-value-claims-geo/', views.get_high_value_claims_geo, name='high_value_claims_geo'),
     path('get-hospital-bed-cases/', views.get_hospital_bed_cases, name='hospital_bed_cases'),
     path('get-hospital-bed-details/', views.get_hospital_bed_details, name='get_hospital_bed_details'),
     path('hospital-violations-by-district/', views.hospital_violations_by_district),

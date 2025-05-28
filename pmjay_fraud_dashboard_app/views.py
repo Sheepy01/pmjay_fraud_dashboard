@@ -1227,6 +1227,50 @@ def get_high_value_gender_distribution(request):
         'colors': colors
     })
 
+def get_high_value_claims_geo(request):
+    case_type = request.GET.get('case_type', 'all').upper()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # parse dates
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
+    except ValueError:
+        start_date = end_date = timezone.localdate()
+
+    # base queryset
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+    )
+    # thresholds
+    if case_type == 'SURGICAL':
+        qs = qs.filter(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
+    elif case_type == 'MEDICAL':
+        qs = qs.filter(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+    else:  # ALL
+        qs = qs.filter(
+            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+            Q(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
+        )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # aggregate by district_name
+    agg = qs.values('district_name').annotate(count=Count('id'))
+
+    # map to FID
+    result = []
+    for row in agg:
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': row['count']})
+
+    return JsonResponse(result, safe=False)
 
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')

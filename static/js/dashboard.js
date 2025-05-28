@@ -717,7 +717,7 @@ $(document).ready(function() {
                 <div class="map-container">
                     <h4>Heat Map</h4>
                     <div id="mapViewNode"
-                        style="height: 800px; width: 100%; margin-top: 1.5em; border: 1px solid #ddd;">
+                        style="height: 600px; width: 100%; margin-top: 1.5em; border: 1px solid #ddd;">
                     </div>
                 </div>
             `,
@@ -871,17 +871,10 @@ $(document).ready(function() {
                         this.loadDemographicCharts(districts);
 
                         const geoUrl = `/api/flagged-claims-geo/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
-                        fetch(geoUrl, {
-                            headers: { 'X-CSRFToken': getCookie('csrftoken') }
-                        })
-                        .then(r => r.json())
-                        .then(geoCounts => {
-                            const countLookup = {};
-                            console.log('Geo Counts:', geoCounts);
-                            geoCounts.forEach(d => { countLookup[d.fid] = d.count; });
-                            initMap(countLookup);
-                        })
-                        .catch(err => console.error('Geo-count fetch error:', err));
+                        renderGeoMap({
+                            url: geoUrl,
+                            containerId: "mapViewNode"
+                        });
                     })
                     .catch(error => console.error('Chart load error:', error));
             },
@@ -1273,6 +1266,27 @@ $(document).ready(function() {
                                 </div>
                             </div>
                         </div>
+
+                        <div class="map-group">
+                            <div class="map-container-all">
+                                <div class="map-card">
+                                    <h4>Combined Map</h4>
+                                    <div id="highValueMapAll" class="map-view-node" style="height:600px;"></div>
+                                </div>
+                            </div>
+                            <div class="map-container-medical">
+                                <div class="map-card">
+                                    <h4>Medical Map</h4>
+                                    <div id="highValueMapMedical" class="map-view-node" style="height:600px;"></div>
+                                </div>
+                            </div>
+                            <div class="map-container-surgical">
+                                <div class="map-card">
+                                    <h4>Surgical Map</h4>
+                                    <div id="highValueMapSurgical" class="map-view-node" style="height:600px;"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>`; 
                 } else {
                     const cap = this.capitalize(caseType);
@@ -1295,7 +1309,12 @@ $(document).ready(function() {
                                 <div class="chart-callouts" id="highValue${cap}GenderCallouts"></div>
                             </div>
                         </div>
-                    </div>
+                        <div class="map-container">
+                            <div class="map-card">
+                                <h4>${cap} Map</h4>
+                                <div id="highValueMap${cap}" class="map-view-node" style="height:600px;"></div>
+                            </div>
+                        </div>
                 `;
                 }
         
@@ -1310,15 +1329,39 @@ $(document).ready(function() {
                         'highValueMedicalAgeCallouts', 'highValueMedicalGenderCallouts', startDate, endDate);
                     this.loadDemographics('surgical', districts, 'highValueSurgicalAgeChart', 'highValueSurgicalGenderChart', 
                         'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts', startDate, endDate);
+                    const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+
+                    // 1) Combined
+                    renderGeoMap({
+                    url: `/api/high-value-claims-geo/?case_type=all${baseParams}`,
+                    containerId: "highValueMapAll"
+                    });
+
+                    // 2) Medical
+                    renderGeoMap({
+                    url: `/api/high-value-claims-geo/?case_type=medical${baseParams}`,
+                    containerId: "highValueMapMedical"
+                    });
+
+                    // 3) Surgical
+                    renderGeoMap({
+                    url: `/api/high-value-claims-geo/?case_type=surgical${baseParams}`,
+                    containerId: "highValueMapSurgical"
+                    });
+
                 } else {
                     const cap = this.capitalize(caseType);
                     this.loadChartData(caseType, districts, `highValue${cap}Chart`, startDate, endDate);
-                    this.loadDemographics(caseType, districts, 
-                        `highValue${cap}AgeChart`, 
-                        `highValue${cap}GenderChart`, 
-                        `highValue${cap}AgeCallouts`, 
-                        `highValue${cap}GenderCallouts`, startDate, endDate);
+                    this.loadDemographics(caseType, districts, `highValue${cap}AgeChart`, `highValue${cap}GenderChart`, `highValue${cap}AgeCallouts`, `highValue${cap}GenderCallouts`, startDate, endDate);
+                    const mapContainerId = `highValueMap${cap}`;
+                    const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                    renderGeoMap({
+                        url: `/api/high-value-claims-geo/?case_type=${caseType}${baseParams}`,
+                        containerId: mapContainerId
+                    });
                 }
+                // const geoUrl = `/api/high-value-claims-geo/?case_type=${caseType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                // renderGeoMap({ url: geoUrl, containerId: "highValueMapViewNode" });
             },
             loadChartData: function(caseType, districts, canvasId, startDate, endDate) {
                 const url = `/get-high-value-claims-by-district/?case_type=${caseType}&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
@@ -3345,7 +3388,14 @@ $(document).ready(function() {
         }).get();
     }
     
-    function initMap(countLookup) {
+    function initMap(countLookup, containerId="mapViewNode") {
+        const colorPalettes = {
+        highValueMapAll:      ["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"],
+        highValueMapMedical:  ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        highValueMapSurgical: ["#fff5f0", "#fcbba1", "#fc9272", "#de2d26", "#a50f15"],
+        mapViewNode:          ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        };
+        const palette = colorPalettes[containerId] || colorPalettes.mapViewNode;
         require([
             "esri/Map",
             "esri/views/MapView",
@@ -3366,7 +3416,7 @@ $(document).ready(function() {
 
             // 3) Create the view, disable all interaction
             const view = new MapView({
-            container: "mapViewNode",
+            container: containerId,
             map,
             center: [85.8, 25.9],
             zoom: 7,
@@ -3405,11 +3455,11 @@ $(document).ready(function() {
                 const counts   = Object.values(countLookup);
                 const maxCount = counts.length ? Math.max(...counts) : 1;
                 const colorStops = [
-                { value: 0,               color: "#f7fbff" },
-                { value: maxCount * 0.25, color: "#c6dbef" },
-                { value: maxCount * 0.5,  color: "#6baed6" },
-                { value: maxCount * 0.75, color: "#2171b5" },
-                { value: maxCount,        color: "#08306b" }
+                { value: 0,               color: palette[0] },
+                { value: maxCount * 0.25, color: palette[1] },
+                { value: maxCount * 0.5,  color: palette[2] },
+                { value: maxCount * 0.75, color: palette[3] },
+                { value: maxCount,        color: palette[4] }
                 ];
 
                 // 5) In-memory polygon layer (with labels)
@@ -3495,8 +3545,20 @@ $(document).ready(function() {
             })
             .catch(err => console.error("Map layering error:", err));
         });
-        }
+    }
 
+    function renderGeoMap({ url, containerId, countKey="count", fidKey="fid" }) {
+    fetch(url, { headers: {'X-CSRFToken': getCookie('csrftoken')} })
+        .then(r => r.json())
+        .then(geoCounts => {
+        // build lookup
+        const lookup = {};
+        geoCounts.forEach(d => { lookup[d[fidKey]] = d[countKey]; });
+        // call your existing initMap, but point it at the new container:
+        initMap(lookup, containerId);
+        })
+        .catch(err => console.error("Geo-counts fetch error:", err));
+    }
 
     // Initialize on load
     $(function() {

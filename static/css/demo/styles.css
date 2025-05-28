@@ -1779,3 +1779,60 @@ white-space: nowrap;
     transform: translateY(-5px);
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
+
+.map-container-all {
+    position: relative;
+    margin-top: 30px;
+    flex: 1;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.21);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease;
+    text-align: left;
+    color: black;
+}
+
+.map-container-all:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
+
+.map-container-medical {
+    position: relative;
+    margin-top: 30px;
+    flex: 1;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.21);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease;
+    text-align: left;
+    color: black;
+}
+
+.map-container-medical:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
+
+.map-container-surgical {
+    position: relative;
+    margin-top: 30px;
+    flex: 1;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.21);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease;
+    text-align: left;
+    color: black;
+}
+
+.map-container-surgical:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
