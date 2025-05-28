@@ -1567,6 +1567,13 @@ $(document).ready(function() {
                     <canvas id="hospitalDistrictChart"></canvas>
                     <div class="chart-legend" id="hospitalDistrictLegend"></div>
                 </div>
+
+                <div class="map-container">
+                    <div class="map-card">
+                        <h4>Heat Map</h4>
+                        <div id="hospitalBedMap" class="map-view-node" style="height:600px;"></div>
+                    </div>
+                </div>
             `,
             postRender: function(districts) {
                 this.initPagination(districts);
@@ -1626,6 +1633,11 @@ $(document).ready(function() {
                 fetch(`/hospital-violations-by-district/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderBarChart(data));
+                    const geoUrl = `/get-hospital-bed-violations-geo/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                    renderGeoMap({
+                        url: geoUrl,
+                        containerId: "hospitalBedMap"
+                    });
             },
             renderBarChart: function(data) {
                 const ctx = document.getElementById('hospitalDistrictChart')?.getContext('2d');
@@ -1794,6 +1806,13 @@ $(document).ready(function() {
                         <div class="chart-callouts" id="familyGenderCallouts"></div>
                     </div>
                 </div>
+
+                <div class="map-container">
+                    <div class="map-card">
+                        <h4>Family ID Cases Map</h4>
+                        <div id="familyIdMap" class="map-view-node" style="height:600px;"></div>
+                    </div>
+                </div>
             `,
             colorMap: {},
             postRender: function(districts) {
@@ -1874,6 +1893,13 @@ $(document).ready(function() {
                 fetch(`/get-family-gender-distribution/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('familyGenderChart', data, 'familyGenderCallouts'));
+
+                // Map
+                const geoUrl = `/get-family-violations-geo/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                renderGeoMap({
+                    url: geoUrl,
+                    containerId: "familyIdMap"
+                });
             },
             renderBarChart: function(canvasId, data) {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
@@ -2110,6 +2136,13 @@ $(document).ready(function() {
                         <div class="chart-callouts" id="geoGenderCallouts"></div>
                     </div>
                 </div>
+
+                <div class="map-container">
+                    <div class="map-card">
+                        <h4>Geographic Anomalies Map</h4>
+                        <div id="geoAnomaliesMap" class="map-view-node" style="height:600px;"></div>
+                    </div>
+                </div>
             `,
             postRender: function(districts) {
                 this.initPagination(districts);
@@ -2181,6 +2214,13 @@ $(document).ready(function() {
                 fetch(`/get-geo-demographics/gender/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`)
                     .then(response => response.json())
                     .then(data => this.renderPieChart('geoGenderChart', data, 'geoGenderCallouts'));
+
+                // Map
+                const geoUrl = `/get-geo-violations-geo/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                renderGeoMap({
+                    url: geoUrl,
+                    containerId: "geoAnomaliesMap"
+                });
             },
             renderBarChart: function(canvasId, data) {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
@@ -2657,6 +2697,32 @@ $(document).ready(function() {
                                     <div class="chart-callouts" id="ophthPreauthGenderCallouts"></div>
                                 </div>
                             </div>
+                            <div class="map-group">
+                                <div class="map-container-all">
+                                    <div class="map-card">
+                                        <h4>Combined Map</h4>
+                                        <div id="ophthalmologyCataractMapAll" class="map-view-node" style="height:600px;"></div>
+                                    </div>
+                                </div>
+                                <div class="map-container-age">
+                                    <div class="map-card">
+                                        <h4>Medical Map</h4>
+                                        <div id="ophthalmologyCataractMapAge40" class="map-view-node" style="height:600px;"></div>
+                                    </div>
+                                </div>
+                                <div class="map-container-preauth">
+                                    <div class="map-card">
+                                        <h4>Surgical Map</h4>
+                                        <div id="ophthalmologyCataractMapPreauthTime" class="map-view-node" style="height:600px;"></div>
+                                    </div>
+                                </div>
+                                <div class="map-container-ot-cases">
+                                    <div class="map-card">
+                                        <h4>Surgical Map</h4>
+                                        <div id="ophthalmologyCataractMapOTCase" class="map-view-node" style="height:600px;"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     `);
                     
@@ -2670,6 +2736,32 @@ $(document).ready(function() {
                     this.loadPieCharts('all', districts); // Combined pies
                     ['age', 'ot', 'preauth'].forEach(type => {
                         this.loadPieCharts(type, districts); // Individual violation pies
+                    });
+
+                    const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+
+                    // Load maps
+                    const mapUrls = {
+                        all: `/get-ophthalmology-violations-geo/?type=all&district=${districts.join(',')}`,
+                        age: `/get-ophthalmology-violations-geo/?type=age&district=${districts.join(',')}`,
+                        preauth: `/get-ophthalmology-violations-geo/?type=preauth&district=${districts.join(',')}`,
+                        ot: `/get-ophthalmology-violations-geo/?type=ot&district=${districts.join(',')}`
+                    };
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=all${baseParams}`,
+                        containerId: "ophthalmologyCataractMapAll"
+                    });
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=age${baseParams}`,
+                        containerId: "ophthalmologyCataractMapAll"
+                    });
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=preauth${baseParams}`,
+                        containerId: "ophthalmologyCataractMapAll"
+                    });
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=ot${baseParams}`,
+                        containerId: "ophthalmologyCataractMapAll"
                     });
                 } else {
                     container.html(`
@@ -2689,6 +2781,12 @@ $(document).ready(function() {
                                     <h4>Gender Distribution</h4>
                                     <canvas id="ophth${this.capitalize(violationType)}GenderChart"></canvas>
                                     <div class="chart-callouts" id="ophth${this.capitalize(violationType)}GenderCallouts"></div>
+                                </div>
+                            </div>
+                            <div class="map-container">
+                                <div class="map-card">
+                                    <h4>${violationType} Map</h4>
+                                    <div id="highValueMap${violationType}" class="map-view-node" style="height:600px;"></div>
                                 </div>
                             </div>
                         </div>
@@ -3393,6 +3491,9 @@ $(document).ready(function() {
         highValueMapAll:      ["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"],
         highValueMapMedical:  ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
         highValueMapSurgical: ["#fff5f0", "#fcbba1", "#fc9272", "#de2d26", "#a50f15"],
+        hospitalBedMap:       ["#FFFFE0", "#FFFACD", "#FFDA03", "#DAA520", "#7C6C0D"],
+        familyIdMap:          ["#D1F2EB", "#A2E4B8", "#7FC7B9", "#5CB8A5", "#3A9188"],
+        geoAnomaliesMap:      ["#AFEEEE", "#7FFFD4", "#008080", "#006D6D", "#003D3D"],
         mapViewNode:          ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
         };
         const palette = colorPalettes[containerId] || colorPalettes.mapViewNode;

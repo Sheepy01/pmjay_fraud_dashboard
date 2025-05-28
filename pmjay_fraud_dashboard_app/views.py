@@ -1381,6 +1381,7 @@ def get_hospital_bed_details(request):
     violations = (
         Last24Hour.objects
         .filter(
+            Q(hospital_type='P') &
             Q(admission_date__date__gte=start_date) &
             Q(admission_date__date__lte=end_date) |
             Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
@@ -1455,6 +1456,7 @@ def hospital_violations_by_district(request):
     result = (
         Last24Hour.objects
         .filter(
+            Q(hospital_type='P') &
             Q(admission_date__date__gte=start_date) &
             Q(admission_date__date__lte=end_date) |
             Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
@@ -1472,6 +1474,43 @@ def hospital_violations_by_district(request):
         'districts': [item['district_name'] or 'Unknown' for item in result],
         'counts': [item['violation_count'] for item in result]
     })
+
+def get_hospital_bed_violations_geo(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # parse dates
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
+    except ValueError:
+        start_date = end_date = timezone.localdate()
+
+    # base queryset
+    qs = Last24Hour.objects.filter(
+        Q(hospital_type='P') &
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) |
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+    )
+    
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # aggregate by district_name
+    agg = qs.values('district_name').annotate(count=Count('hospital_id', distinct=True))
+
+    # map to FID
+    result = []
+    for row in agg:
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': row['count']})
+
+    return JsonResponse(result, safe=False)
 
 def get_family_id_cases(request):
     # 1) Parse district filter
@@ -1781,6 +1820,53 @@ def get_family_violations_demographics(request, type):
     
     return JsonResponse(data)
 
+def get_family_violations_geo(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # parse dates
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
+    except ValueError:
+        start_date = end_date = timezone.localdate()
+
+    # base queryset
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+    )
+
+    # Subquery: Get family_ids with more than 2 cases today
+    suspicious_families = Last24Hour.objects.annotate(
+        day=TruncDate('preauth_initiated_date')
+    ).filter(
+        day__range=(start_date, end_date)
+    ).values('family_id', 'day').annotate(
+        count=Count('id')
+    ).filter(
+        count__gt=1
+    ).values('family_id')
+
+    qs = qs.filter(family_id__in=Subquery(suspicious_families))
+
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # aggregate by district_name
+    agg = qs.values('district_name').annotate(count=Count('family_id', distinct=True))
+    # map to FID
+    result = []
+    for row in agg:
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': row['count']})
+
+    return JsonResponse(result, safe=False)
+
 def get_geo_anomalies(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -2010,6 +2096,46 @@ def get_geo_violations_demographics(request, type):
         }
     
     return JsonResponse(data)
+
+def get_geo_violations_geo(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # parse dates
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
+    except ValueError:
+        start_date = end_date = timezone.localdate()
+
+    # base queryset
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        state_name__isnull=False,
+        hospital_state_name__isnull=False
+    ).exclude(state_name=F('hospital_state_name')).filter(
+        Q(admission_date__date__gte=start_date) &
+        Q(admission_date__date__lte=end_date) | 
+        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
+        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+    )
+
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # aggregate by state_name
+    agg = qs.values('district_name').annotate(count=Count('id', distinct=True))
+
+    # map to FID
+    result = []
+    for row in agg:
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': row['count']})
+
+    return JsonResponse(result, safe=False)
 
 # Module-level cache
 df_cache = None
@@ -2484,6 +2610,79 @@ def get_ophthalmology_demographics(request, type):
             'data':   counts.tolist(),
             'colors': colors
         })
+    
+def get_ophthalmology_violations_geo(request):
+    # 1) Params
+    violation_type = request.GET.get('type', 'all')
+    district_param = request.GET.get('district', '').strip()
+    districts = [d.strip() for d in district_param.split(',')] if district_param else []
+
+    # 2) Parse date range
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
+    except (ValueError, TypeError):
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
+    except (ValueError, TypeError):
+        end_date = date.today()
+
+    # 3) Load your DataFrame + capacity map
+    df, cap_map = load_dataframes()
+
+    # 4) Parse date & hour
+    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
+    df['preauth_hour'] = df['preauth_initiated_time'].str.split(':').str[0].astype(float, errors='ignore')
+
+    # 5) Base filter
+    mask = (
+        df['hospital_type'].eq('P') &
+        df['procedure_code'].str.contains('SE', na=False) &
+        df['preauth_initiated_date'].dt.date.between(start_date, end_date)
+    )
+    if districts:
+        mask &= df['district_name'].isin(districts)
+    df_base = df.loc[mask]
+
+    # 6) Compute OT overflows
+    ot_indices = []
+    for hosp_id, cap in cap_map.items():
+        sub = df_base[df_base['hospital_id'] == hosp_id]
+        if len(sub) > cap:
+            ot_indices += sub.iloc[cap:].index.tolist()
+    ot_set = set(ot_indices)
+
+    # 7) Build violation mask
+    m_age     = df_base['age_years'] < 40
+    m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
+    m_ot      = df_base.index.isin(ot_set)
+
+    if violation_type == 'age':
+        vio_mask = m_age
+    elif violation_type == 'preauth':
+        vio_mask = m_preauth
+    elif violation_type == 'ot':
+        vio_mask = m_ot
+    elif violation_type == 'multiple':
+        vio_mask = (m_age.astype(int) + m_preauth.astype(int) + m_ot.astype(int)) > 1
+    else:  # all
+        vio_mask = m_age | m_preauth | m_ot
+
+    df_filtered = df_base.loc[vio_mask]
+
+    # 8) Aggregate by district_name
+    counts = df_filtered['district_name'].fillna('Unknown').value_counts()
+
+    # 9) Map to FIDs
+    result = []
+    for district_name, cnt in counts.items():
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(district_name.lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': int(cnt)})
+
+    return JsonResponse(result, safe=False)
 
 @require_http_methods(["GET"])
 def download_high_value_claims_excel(request):
