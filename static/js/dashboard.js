@@ -1312,12 +1312,12 @@ $(document).ready(function() {
                         'highValueSurgicalAgeCallouts', 'highValueSurgicalGenderCallouts', startDate, endDate);
                 } else {
                     const cap = this.capitalize(caseType);
-                    this.loadChartData(caseType, districts, `highValue${cap}Chart`);
+                    this.loadChartData(caseType, districts, `highValue${cap}Chart`, startDate, endDate);
                     this.loadDemographics(caseType, districts, 
                         `highValue${cap}AgeChart`, 
                         `highValue${cap}GenderChart`, 
                         `highValue${cap}AgeCallouts`, 
-                        `highValue${cap}GenderCallouts`);
+                        `highValue${cap}GenderCallouts`, startDate, endDate);
                 }
             },
             loadChartData: function(caseType, districts, canvasId, startDate, endDate) {
