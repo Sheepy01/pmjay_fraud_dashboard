@@ -713,6 +713,13 @@ $(document).ready(function() {
                         </div>
                     </div>
                 </div>
+
+                <div class="map-container">
+                    <h4>Heat Map</h4>
+                    <div id="mapViewNode"
+                        style="height: 800px; width: 100%; margin-top: 1.5em; border: 1px solid #ddd;">
+                    </div>
+                </div>
             `,
             postRender: function(districts) {
                 this.initPagination(districts);
@@ -862,6 +869,19 @@ $(document).ready(function() {
                     .then(chartData => {
                         this.renderFlaggedClaimsChart(chartData);
                         this.loadDemographicCharts(districts);
+
+                        const geoUrl = `/api/flagged-claims-geo/?district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                        fetch(geoUrl, {
+                            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                        })
+                        .then(r => r.json())
+                        .then(geoCounts => {
+                            const countLookup = {};
+                            console.log('Geo Counts:', geoCounts);
+                            geoCounts.forEach(d => { countLookup[d.fid] = d.count; });
+                            initMap(countLookup);
+                        })
+                        .catch(err => console.error('Geo-count fetch error:', err));
                     })
                     .catch(error => console.error('Chart load error:', error));
             },
@@ -3325,6 +3345,159 @@ $(document).ready(function() {
         }).get();
     }
     
+    function initMap(countLookup) {
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/layers/FeatureLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic"
+        ], (EsriMap, MapView, FeatureLayer, GraphicsLayer, Graphic) => {
+
+            // 1) White background
+            const map = new EsriMap({ basemap: null });
+
+            // 2) Load the service layer
+            const svcLayer = new FeatureLayer({
+            url: "https://services6.arcgis.com/D79Nl8HOYMCU0cVt/arcgis/rest/services/bihar_districts/FeatureServer/0",
+            outFields: ["FID","DISTRICT"]
+            });
+            map.add(svcLayer);
+
+            // 3) Create the view, disable all interaction
+            const view = new MapView({
+            container: "mapViewNode",
+            map,
+            center: [85.8, 25.9],
+            zoom: 7,
+            constraints: {
+                rotationEnabled: false,
+                minZoom: 7,
+                maxZoom: 7
+            },
+            ui: { components: [] }
+            });
+
+            // disable zoom & pan gestures at the API level
+            view.navigation.mouseWheelZoomEnabled  = false;
+            view.navigation.browserTouchPanEnabled = false;
+
+            view.on("drag",       e => e.stopPropagation(), true);
+            view.on("mouse-wheel", e => e.stopPropagation(), true);
+            view.on("key-down",   e => {
+            if (e.key.startsWith("Arrow")) e.stopPropagation();
+            }, true);
+
+            // 4) Once the polygons load, swap in-memory + draw circles
+            view.whenLayerView(svcLayer)
+            .then(() => svcLayer.queryFeatures({
+                where: "1=1",
+                outFields: ["FID","DISTRICT"],
+                returnGeometry: true
+            }))
+            .then(featureSet => {
+                // annotate counts
+                featureSet.features.forEach(f => {
+                f.attributes.count = countLookup[f.attributes.FID] || 0;
+                });
+
+                // compute stops
+                const counts   = Object.values(countLookup);
+                const maxCount = counts.length ? Math.max(...counts) : 1;
+                const colorStops = [
+                { value: 0,               color: "#f7fbff" },
+                { value: maxCount * 0.25, color: "#c6dbef" },
+                { value: maxCount * 0.5,  color: "#6baed6" },
+                { value: maxCount * 0.75, color: "#2171b5" },
+                { value: maxCount,        color: "#08306b" }
+                ];
+
+                // 5) In-memory polygon layer (with labels)
+                const memoryPolygons = new FeatureLayer({
+                source: featureSet.features,
+                fields: [
+                    ...svcLayer.fields,
+                    { name: "count", alias: "Flagged Count", type: "integer" }
+                ],
+                objectIdField: svcLayer.objectIdField,
+                geometryType: svcLayer.geometryType,
+                spatialReference: svcLayer.spatialReference,
+                renderer: {
+                    type: "simple",
+                    symbol: {
+                    type: "simple-fill",
+                    outline: { color: "#aaa", width: 0.5 }
+                    },
+                    visualVariables: [{
+                    type: "color",
+                    field: "count",
+                    stops: colorStops
+                    }]
+                },
+                labelingInfo: [{
+                    labelExpressionInfo: { expression: "$feature.DISTRICT" },
+                    symbol: {
+                    type: "text",
+                    color: "#000",
+                    haloColor: "#fff",
+                    haloSize: "1px",
+                    font: { size: "12px", weight: "bold" }
+                    },
+                    labelPlacement: "always-horizontal"
+                }]
+                });
+
+                map.remove(svcLayer);
+                map.add(memoryPolygons);
+
+                // 6) Add circles *after* polygons so they sit on top
+                const circleLayer = new GraphicsLayer();
+                map.add(circleLayer);
+
+                // draw circles + text
+                const minSize = 12, maxSize = 60;
+                featureSet.features.forEach(feat => {
+                const cnt = feat.attributes.count;
+                if (!cnt) return;
+
+                const center = feat.geometry.extent.center;
+                const size   = minSize + (cnt / maxCount) * (maxSize - minSize);
+
+                // circle marker
+                circleLayer.add(new Graphic({
+                    geometry: center,
+                    symbol: {
+                    type: "simple-marker",
+                    style: "circle",
+                    size: size,
+                    color: "#e34234",
+                    outline: { color: "#fff", width: 0.5 }
+                    }
+                }));
+
+                // count label
+                circleLayer.add(new Graphic({
+                    geometry: center,
+                    symbol: {
+                    type: "text",
+                    text: String(cnt),
+                    color: "#fff",
+                    haloColor: "#000",
+                    haloSize: "0.5px",
+                    font: { size: "14px", weight: "bold" },
+                    horizontalAlignment: "center",
+                    verticalAlignment: "middle",
+                    xoffset: 0,
+                    yoffset: 4   // nudge the number up 4px
+                    }
+                }));
+                });
+            })
+            .catch(err => console.error("Map layering error:", err));
+        });
+        }
+
+
     // Initialize on load
     $(function() {
         $('#modalOverlay').hide().removeClass('show');

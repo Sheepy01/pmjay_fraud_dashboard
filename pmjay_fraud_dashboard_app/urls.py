@@ -14,6 +14,7 @@ urlpatterns = [
     path('get-all-flagged-claims/', views.get_all_flagged_claims, name="get_all_flagged_claims"),
     path('get-age-distribution/', views.get_age_distribution, name='get_age_distribution'),
     path('get-gender-distribution/', views.get_gender_distribution, name='get_gender_distribution'),
+    path('api/flagged-claims-geo/', views.get_flagged_claims_geo_counts, name='flagged_claims_geo'),
     path('get-high-value-claims/', views.get_high_value_claims, name='get_high_value_claims'),
     path('get-high-value-claims-details/', views.get_high_value_claims_details, name='get_high_value_claims_details'),
     path('get-high-value-claims-by-district/', views.get_high_value_claims_by_district, name='get_high_value_claims_by_district'),

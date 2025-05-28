@@ -653,6 +653,84 @@ def get_gender_distribution(request):
         'colors': ['#36A2EB', '#FF6384', '#CCCCCC'][:len(labels)]
     })
 
+SHAPEFILE_DISTRICT_MAPPING = {
+    "sheohar": 1,
+    "sitamarhi": 2,
+    "madhubani": 3,
+    "supaul": 4,
+    "araria": 5,
+    "purnia": 6,
+    "katihar": 7,
+    "madhepura": 8,
+    "saharsa": 9,
+    "darbhanga": 10,
+    "muzaffarpur": 11,
+    "gopalganj": 12,
+    "siwan": 13,
+    "saran": 14,
+    "vaishali": 15,
+    "samastipur": 16,
+    "begusarai": 17,
+    "khagaria": 18,
+    "bhagalpur": 19,
+    "banka": 20,
+    "munger": 21,
+    "lakhisarai": 22,
+    "sheikhpura": 23,
+    "nalanda": 24,
+    "patna": 25,
+    "bhojpur": 26,
+    "kaimur": 27,
+    "rohtas": 28,
+    "aurangabad": 29,
+    "gaya": 30,
+    "nawada": 31,
+    "jamui": 32,
+    "jehanabad": 33,
+    "arwal": 34,
+    "east champaran": 35,
+    "purbi champaran": 35,
+    "kishanganj": 36,
+    "buxar": 37,
+    "west champaran": 38,
+}
+
+def get_flagged_claims_geo_counts(request):
+    # 1) parse filters
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
+    except ValueError:
+        start_date = end_date = timezone.localdate()
+
+    # 2) base queryset
+    qs = Last24Hour.objects.filter(
+        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
+        hospital_type='P',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+
+    # 3) aggregate by district_name
+    agg = qs.values('district_name').annotate(count=Count('id'))
+
+    # 4) map back to FID
+    result = []
+    for row in agg:
+        name  = row['district_name']
+        cnt   = row['count']
+        fid   = SHAPEFILE_DISTRICT_MAPPING.get(name.lower())
+        if fid is not None:
+            result.append({'fid': fid, 'count': cnt})
+
+    return JsonResponse(result, safe=False)
+
 def download_flagged_claims_excel(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
@@ -811,84 +889,6 @@ def download_flagged_claims_report(request):
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
     return response
-
-# SHAPEFILE_DISTRICT_MAPPING = {
-#     "sheohar": 0,
-#     "sitamarhi": 1,
-#     "madhubani": 2,
-#     "supaul": 3,
-#     "araria": 4,
-#     "purnia": 5,
-#     "katihar": 6,
-#     "madhepura": 7,
-#     "saharsa": 8,
-#     "darbhanga": 9,
-#     "muzaffarpur": 10,
-#     "gopalganj": 11,
-#     "siwan": 12,
-#     "saran": 13,
-#     "vaishali": 14,
-#     "samastipur": 15,
-#     "begusarai": 16,
-#     "khagaria": 17,
-#     "bhagalpur": 18,
-#     "banka": 19,
-#     "munger": 20,
-#     "lakhisarai": 21,
-#     "sheikhpura": 22,
-#     "nalanda": 23,
-#     "patna": 24,
-#     "bhojpur": 25,
-#     "kaimur": 26,
-#     "rohtas": 27,
-#     "aurangabad": 28,
-#     "gaya": 29,
-#     "nawada": 30,
-#     "jamui": 31,
-#     "jehanabad": 32,
-#     "arwal": 33,
-#     "east champaran": 34,
-#     "purbi champaran": 34,
-#     "kishanganj": 35,
-#     "buxar": 36,
-#     "west champaran": 37,
-# }
-
-# def patient_admitted_in_watchlist_hospitals_heatmap_data(request):
-#     today = date(2025, 2, 5)  # Replace with dynamic date if needed
-#     queryset = Last24Hour.objects.filter(
-#         hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-#         hospital_type='P',
-#         preauth_initiated_date__date=today
-#     )
-    
-#     # Aggregate counts by district (same as bar chart)
-#     district_counts = (
-#         queryset.values('district_name')
-#         .annotate(count=Count('id'))
-#         .order_by('-count')
-#     )
-    
-#     # Map to shapefile IDs and normalize district names
-#     heatmap_data = []
-#     for entry in district_counts:
-#         district = entry['district_name'].strip().lower()  # Normalize
-#         shapefile_id = SHAPEFILE_DISTRICT_MAPPING.get(district, None)
-#         if shapefile_id is not None:
-#             heatmap_data.append({
-#                 "DISTRICT": district.upper(),  # Match shapefile casing
-#                 "ID": shapefile_id,
-#                 "Count": entry['count']
-#             })
-#         else:
-#             print(f"Warning: District '{district}' not found in shapefile mapping!")
-    
-#     # Export to Excel
-#     df = pd.DataFrame(heatmap_data)
-#     file_path = "data/Heatmap_data_patient_admitted_in_watchlist_hospitals.xlsx"
-#     df.to_excel(file_path, index=False)
-    
-#     return HttpResponse("Heatmap data exported successfully!")
 
 def get_high_value_claims(request):
     district_param = request.GET.get('district', '')
