@@ -2706,20 +2706,26 @@ $(document).ready(function() {
                                 </div>
                                 <div class="map-container-age">
                                     <div class="map-card">
-                                        <h4>Medical Map</h4>
+                                        <h4>Age < 40</h4>
                                         <div id="ophthalmologyCataractMapAge40" class="map-view-node" style="height:600px;"></div>
                                     </div>
                                 </div>
                                 <div class="map-container-preauth">
                                     <div class="map-card">
-                                        <h4>Surgical Map</h4>
+                                        <h4>Preauth Time</h4>
                                         <div id="ophthalmologyCataractMapPreauthTime" class="map-view-node" style="height:600px;"></div>
                                     </div>
                                 </div>
                                 <div class="map-container-ot-cases">
                                     <div class="map-card">
-                                        <h4>Surgical Map</h4>
+                                        <h4>OT Cases</h4>
                                         <div id="ophthalmologyCataractMapOTCase" class="map-view-node" style="height:600px;"></div>
+                                    </div>
+                                </div>
+                                <div class="map-container-more-than-one-cases">
+                                    <div class="map-card">
+                                        <h4>More Than One</h4>
+                                        <div id="ophthalmologyCataractMapMoreThanOneCase" class="map-view-node" style="height:600px;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -2738,30 +2744,28 @@ $(document).ready(function() {
                         this.loadPieCharts(type, districts); // Individual violation pies
                     });
 
+                    const {startDate, endDate} = getDateRange();
                     const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
-
-                    // Load maps
-                    const mapUrls = {
-                        all: `/get-ophthalmology-violations-geo/?type=all&district=${districts.join(',')}`,
-                        age: `/get-ophthalmology-violations-geo/?type=age&district=${districts.join(',')}`,
-                        preauth: `/get-ophthalmology-violations-geo/?type=preauth&district=${districts.join(',')}`,
-                        ot: `/get-ophthalmology-violations-geo/?type=ot&district=${districts.join(',')}`
-                    };
+                    
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=all${baseParams}`,
                         containerId: "ophthalmologyCataractMapAll"
                     });
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=age${baseParams}`,
-                        containerId: "ophthalmologyCataractMapAll"
+                        containerId: "ophthalmologyCataractMapAge40"
                     });
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=preauth${baseParams}`,
-                        containerId: "ophthalmologyCataractMapAll"
+                        containerId: "ophthalmologyCataractMapPreauthTime"
                     });
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=ot${baseParams}`,
-                        containerId: "ophthalmologyCataractMapAll"
+                        containerId: "ophthalmologyCataractMapOTCase"
+                    });
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=multiple${baseParams}`,
+                        containerId: "ophthalmologyCataractMapMoreThanOneCase"
                     });
                 } else {
                     container.html(`
@@ -2786,7 +2790,7 @@ $(document).ready(function() {
                             <div class="map-container">
                                 <div class="map-card">
                                     <h4>${violationType} Map</h4>
-                                    <div id="highValueMap${violationType}" class="map-view-node" style="height:600px;"></div>
+                                    <div id="ophthalmologyCataractGeoMap${violationType}" class="map-view-node" style="height:600px;"></div>
                                 </div>
                             </div>
                         </div>
@@ -2794,6 +2798,14 @@ $(document).ready(function() {
                     
                     this.loadBarChart(violationType, districts, `ophth${this.capitalize(violationType)}Chart`, `ophth${this.capitalize(violationType)}Legend`);
                     this.loadPieCharts(violationType, districts);
+
+                    const {startDate, endDate} = getDateRange();
+                    const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+                    
+                    renderGeoMap({
+                        url: `/get-ophthalmology-violations-geo/?type=${violationType}${baseParams}`,
+                        containerId: `ophthalmologyCataractGeoMap${violationType}`
+                    });
                 }
             },
             loadBarChart: function(violationType, districts, canvasId, legendId) {
@@ -3488,13 +3500,18 @@ $(document).ready(function() {
     
     function initMap(countLookup, containerId="mapViewNode") {
         const colorPalettes = {
-        highValueMapAll:      ["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"],
-        highValueMapMedical:  ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
-        highValueMapSurgical: ["#fff5f0", "#fcbba1", "#fc9272", "#de2d26", "#a50f15"],
-        hospitalBedMap:       ["#FFFFE0", "#FFFACD", "#FFDA03", "#DAA520", "#7C6C0D"],
-        familyIdMap:          ["#D1F2EB", "#A2E4B8", "#7FC7B9", "#5CB8A5", "#3A9188"],
-        geoAnomaliesMap:      ["#AFEEEE", "#7FFFD4", "#008080", "#006D6D", "#003D3D"],
-        mapViewNode:          ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        highValueMapAll:                            ["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"],
+        highValueMapMedical:                        ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        highValueMapSurgical:                       ["#fff5f0", "#fcbba1", "#fc9272", "#de2d26", "#a50f15"],
+        hospitalBedMap:                             ["#FFFFE0", "#FFFACD", "#FFDA03", "#DAA520", "#7C6C0D"],
+        familyIdMap:                                ["#D1F2EB", "#A2E4B8", "#7FC7B9", "#5CB8A5", "#3A9188"],
+        geoAnomaliesMap:                            ["#AFEEEE", "#7FFFD4", "#008080", "#006D6D", "#003D3D"],
+        ophthalmologyCataractMapAll:                ["#E1BEE7", "#BA68C8", "#9C27B0", "#7B1FA2", "#4A148C"],
+        ophthalmologyCataractMapAge40:              ["#FFF9C4", "#FFF176", "#FFEB3B", "#FBC02D", "#F57F17"],
+        ophthalmologyCataractMapPreauthTime:        ["#B2DFDB", "#4DB6AC", "#009688", "#00796B", "#004D40"],
+        ophthalmologyCataractMapOTCase:             ["#F8BBD0", "#EC407A", "#E91E63", "#C2185B", "#880E4F"],
+        ophthalmologyCataractMapMoreThanOneCase:    ["#C8E6C9", "#81C784", "#4CAF50", "#388E3C", "#1B5E20"],
+        mapViewNode:                                ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
         };
         const palette = colorPalettes[containerId] || colorPalettes.mapViewNode;
         require([
