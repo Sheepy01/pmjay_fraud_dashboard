@@ -3238,34 +3238,52 @@ $(document).ready(function() {
           });
         }
         else if (cardId === 'high-value') {
-          // Determine which sub-type to include
-          const activeBtn = document.querySelector('.case-type-btn.active');
-          const caseType  = activeBtn?.dataset.type || 'all';  // 'all','surgical','medical'
-          fd.append('case_type', caseType);
-      
-          // Pick the right sections
-          const typesToDo = caseType === 'all'
-            ? ['Surgical','Medical']
-            : [ caseType.charAt(0).toUpperCase() + caseType.slice(1) ];
-      
-          typesToDo.forEach(type => {
-            const key = type.toLowerCase();
-            // Charts
-            ['chart','age_chart','gender_chart'].forEach(suffix => {
-              const field    = `${key}_${suffix}`;
-              const canvasId = `highValue${type}` + {
-                chart:       'Chart',
-                age_chart:   'AgeChart',
-                gender_chart:'GenderChart'
-              }[suffix];
-              fd.append(field, safeCanvasDataURL(canvasId));
+            const viewAll = window.highValueViewAll;
+            const viewMed = window.highValueViewMedical;
+            const viewSurg = window.highValueViewSurgical;
+
+            // Determine which sub-type to include
+            const activeBtn = document.querySelector('.case-type-btn.active');
+            const caseType  = activeBtn?.dataset.type || 'all';  // 'all','surgical','medical'
+            fd.append('case_type', caseType);
+
+            if (caseType == 'all') {
+                const shotAll = await viewAll.takeScreenshot();
+                const shotMed = await viewMed.takeScreenshot();
+                const shotSurg = await viewSurg.takeScreenshot();
+                fd.append('map_all', shotAll.dataUrl);
+                fd.append('map_med', shotMed.dataUrl);
+                fd.append('map_surg', shotSurg.dataUrl);
+            } else if (caseType == 'medical') {
+                const shotMed = await viewMed.takeScreenshot();
+                fd.append('map_med', shotMed.dataUrl);
+            } else if (caseType == 'surgical') {
+                const shotSurg = await viewSurg.takeScreenshot();
+                fd.append('map_surg', shotSurg.dataUrl);
+            }
+            // Pick the right sections
+            const typesToDo = caseType === 'all'
+                ? ['Surgical','Medical']
+                : [ caseType.charAt(0).toUpperCase() + caseType.slice(1) ];
+        
+            typesToDo.forEach(type => {
+                const key = type.toLowerCase();
+                // Charts
+                ['chart','age_chart','gender_chart'].forEach(suffix => {
+                const field    = `${key}_${suffix}`;
+                const canvasId = `highValue${type}` + {
+                    chart:       'Chart',
+                    age_chart:   'AgeChart',
+                    gender_chart:'GenderChart'
+                }[suffix];
+                fd.append(field, safeCanvasDataURL(canvasId));
+                });
+                // Callouts
+                ['AgeCallouts','GenderCallouts'].forEach(suffix => {
+                const field = `${key}_` + suffix.toLowerCase();
+                fd.append(field, safeInnerHTML(`highValue${type}${suffix}`));
+                });
             });
-            // Callouts
-            ['AgeCallouts','GenderCallouts'].forEach(suffix => {
-              const field = `${key}_` + suffix.toLowerCase();
-              fd.append(field, safeInnerHTML(`highValue${type}${suffix}`));
-            });
-          });
         }
         else if(cardId === 'hospital-beds') {
             fd.append('hospital_chart',
@@ -3550,6 +3568,12 @@ $(document).ready(function() {
 
             if (containerId === "mapViewNode") {
                 window.flaggedClaimsView = view;
+            } else if (containerId == "highValueMapAll") {
+                window.highValueViewAll = view;
+            } else if (containerId == "highValueMapMedical") {
+                window.highValueViewMedical = view;
+            } else if (containerId == "highValueMapSurgical") {
+                window.highValueViewSurgical = view;
             }
 
             // disable zoom & pan gestures at the API level

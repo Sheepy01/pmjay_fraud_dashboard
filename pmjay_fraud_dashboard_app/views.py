@@ -2810,6 +2810,9 @@ def download_high_value_claims_report(request):
     medical_chart_b64      = strip_b64('medical_chart')
     medical_age_chart_b64  = strip_b64('medical_age_chart')
     medical_gen_chart_b64  = strip_b64('medical_gender_chart')
+    map_all_b64  = strip_b64('map_all')
+    map_med_b64  = strip_b64('map_med')
+    map_surg_b64 = strip_b64('map_surg')
 
     # Callouts
     surgical_age_callouts = request.POST.get('surgical_age_callouts','')
@@ -2891,6 +2894,9 @@ def download_high_value_claims_report(request):
         'surgical_gen_callouts':   surgical_gen_callouts,
         'medical_age_callouts':    medical_age_callouts,
         'medical_gen_callouts':    medical_gen_callouts,
+        'map_all_b64':             map_all_b64,
+        'map_med_b64':             map_med_b64,
+        'map_surg_b64':            map_surg_b64,
     }
     html_string = render_to_string('high_value_claims_report.html', context)
     pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()

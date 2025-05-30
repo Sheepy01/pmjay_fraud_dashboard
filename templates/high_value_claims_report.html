@@ -133,6 +133,10 @@
         <h4>Gender Distribution</h4>
         <img src="data:image/png;base64,{{ surgical_gen_chart_b64 }}" alt="">
         <div class="callouts">{{ surgical_gen_callouts|safe }}</div>
+        <h4>Surgical Heat Maps</h4>
+        {% if map_surg_b64 %}
+          <img src="data:image/png;base64,{{ map_surg_b64 }}" alt="Surgical Map">
+        {% endif %}
       </section>
     {% endif %}
 
@@ -184,6 +188,10 @@
           <img src="data:image/png;base64,{{ medical_gen_chart_b64 }}" alt="">
         {% endif %}
         <div class="callouts">{{ medical_gen_callouts|safe }}</div>
+        <h4>Medical Heat Map</h4>
+        {% if map_med_b64 %}
+          <img src="data:image/png;base64,{{ map_med_b64 }}" alt="Medical Map">
+        {% endif %}
       </section>
     {% endif %}
 
