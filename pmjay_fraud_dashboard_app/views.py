@@ -834,6 +834,7 @@ def download_flagged_claims_report(request):
     gender_b64  = strip_prefix(request.POST.get('gender_chart', ''))
     age_callouts    = request.POST.get('age_callouts', '')
     gender_callouts = request.POST.get('gender_callouts', '')
+    map_b64 = strip_prefix(request.POST.get('flagged_map', ''))
 
     # 2) Fetch the FULL flagged-claims data (no pagination)
     suspicious_ids = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
@@ -878,6 +879,7 @@ def download_flagged_claims_report(request):
         'gender_b64':  gender_b64,
         'age_callouts':    age_callouts,
         'gender_callouts': gender_callouts,
+        'map_b64': map_b64
     }
     html_string = render_to_string('flagged_claims_report.html', context)
 

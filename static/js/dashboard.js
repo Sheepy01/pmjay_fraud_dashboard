@@ -3187,7 +3187,7 @@ $(document).ready(function() {
         return v;
     }
 
-    function generatePDFReport() {
+    async function generatePDFReport() {
         const { startDate, endDate } = getDateRange();
         const loader      = document.getElementById('pdfLoader');
         const progressBar = document.getElementById('pdfProgressBar');
@@ -3223,6 +3223,8 @@ $(document).ready(function() {
         if(endDate)     fd.append('end_date', endDate);
       
         if (cardId === 'flagged-claims') {
+            const shot = await window.flaggedClaimsView.takeScreenshot();
+            fd.append('flagged_map', shot.dataUrl);
           ['flagged','age','gender'].forEach(key => {
             const idMap = {
               flagged: 'flaggedClaimsChart',
@@ -3545,6 +3547,10 @@ $(document).ready(function() {
             },
             ui: { components: [] }
             });
+
+            if (containerId === "mapViewNode") {
+                window.flaggedClaimsView = view;
+            }
 
             // disable zoom & pan gestures at the API level
             view.navigation.mouseWheelZoomEnabled  = false;

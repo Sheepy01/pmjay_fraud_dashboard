@@ -160,6 +160,9 @@
               <img src="data:image/png;base64,{{ gender_b64 }}" alt="">
             {% endif %}
             <div class="callouts">{{ gender_callouts|safe }}</div>
+            {% if map_b64 %}
+              <img src="data:image/png;base64,{{ map_b64 }}" alt="Map View">
+            {% endif %}
           </section>
         </main>
       
