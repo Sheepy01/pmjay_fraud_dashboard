@@ -3338,6 +3338,8 @@ $(document).ready(function() {
             fd.append('geo_gender_callouts',
               safeInnerHTML('geoGenderCallouts')
             );
+            const shot = await window.geoAnomaliesView.takeScreenshot();
+            fd.append('geo_anomalies', shot.dataUrl);
         }
         else if (cardId === 'ophthalmology') {
             const violationType = modal.dataset.violationType || 'all';
@@ -3582,6 +3584,8 @@ $(document).ready(function() {
                 window.hospitalBedViolationsView = view;
             } else if (containerId == "familyIdMap") {
                 window.familyIdViolationsView = view;
+            } else if (containerId == "geoAnomaliesMap") {
+                window.geoAnomaliesView = view;
             }
 
             // disable zoom & pan gestures at the API level

@@ -3372,6 +3372,7 @@ def download_geo_anomalies_pdf_report(request):
     gender_b64 = strip_b64('geo_gender_chart')
     age_c      = request.POST.get('geo_age_callouts','')
     gen_c      = request.POST.get('geo_gender_callouts','')
+    geo_map_b64 = strip_b64('geo_anomalies')
 
     # 2) Fetch full anomalies (no pagination)
     qs = Last24Hour.objects.filter(
@@ -3419,6 +3420,7 @@ def download_geo_anomalies_pdf_report(request):
       'gender_chart_b64': gender_b64,
       'age_callouts':     age_c,
       'gender_callouts':  gen_c,
+      'geo_map_b64':      geo_map_b64
     }
     html_string = render_to_string('geo_anomalies_report.html', context)
     pdf = HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf()
