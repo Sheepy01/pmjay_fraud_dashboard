@@ -101,21 +101,6 @@
           </tbody>
         </table>
       </section>
-      <section class="chart-section">
-        <h3>Combined Distribution</h3>
-        <img src="data:image/png;base64,{{ combined_chart_b64 }}" alt=""/>
-      </section>
-      <section class="chart-section">
-        <h4>Age Distribution (All)</h4>
-        <img src="data:image/png;base64,{{ all_age_b64 }}" alt=""/>
-        <div class="callouts">{{ all_age_callouts|safe }}</div>
-        <h4>Gender Distribution (All)</h4>
-        <img src="data:image/png;base64,{{ all_gender_b64 }}" alt=""/>
-        <div class="callouts">{{ all_gender_callouts|safe }}</div>
-        {% if map_all_b64 %}
-          <img src="data:image/png;base64,{{ map_all_b64 }}" alt="Map View">
-        {% endif %}
-      </section>
     {% endif %}
 
     {% if violation_type == 'all' or violation_type == 'age' %}
@@ -249,7 +234,7 @@
             <th>Preauth Time</th>
           </tr></thead>
           <tbody>
-            {% for r in multiple_rows %}
+            {% for r in preauth_rows %}
             <tr>
               <td>{{ r.serial_no }}</td>
               <td>{{ r.claim_id }}</td>
@@ -306,42 +291,44 @@
             <th>Preauth Time</th>
           </tr></thead>
           <tbody>
-            {% for r in preauth_rows %}
-            <tr>
-              <td>{{ r.serial_no }}</td>
-              <td>{{ r.claim_id }}</td>
-              <td>{{ r.patient_name }}</td>
-              <td>{{ r.district }}</td>
-              <td>{{ r.hospital_id }}</td>
-              <td>{{ r.hospital_name }}</td>
-              <td>{{ r.amount }}</td>
-              <td class="{% if r.age_lt_40 %}age-true{% endif %}">
-                {{ r.age_lt_40|yesno:"True,False" }}
-              </td>
-              <td class="{% if r.ot_cases %}ot-true{% endif %}">
-                {{ r.ot_cases|yesno:"True,False" }}
-              </td>
-              <td class="{% if r.preauth_time %}preauth-true{% endif %}">
-                {{ r.preauth_time|yesno:"True,False" }}
-              </td>
-            </tr>
+            {% for r in multiple_rows %}
+              {% if r.num_true > 1 %}
+                <tr>
+                  <td>{{ r.serial_no }}</td>
+                  <td>{{ r.claim_id }}</td>
+                  <td>{{ r.patient_name }}</td>
+                  <td>{{ r.district }}</td>
+                  <td>{{ r.hospital_id }}</td>
+                  <td>{{ r.hospital_name }}</td>
+                  <td>{{ r.amount }}</td>
+                  <td class="{% if r.age_lt_40 %}age-true{% endif %}">
+                    {{ r.age_lt_40|yesno:"True,False" }}
+                  </td>
+                  <td class="{% if r.ot_cases %}ot-true{% endif %}">
+                    {{ r.ot_cases|yesno:"True,False" }}
+                  </td>
+                  <td class="{% if r.preauth_time %}preauth-true{% endif %}">
+                    {{ r.preauth_time|yesno:"True,False" }}
+                  </td>
+                </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>
       </section>
       <section class="chart-section">
-        <h3>Pre-auth Time Distribution</h3>
-        <img src="data:image/png;base64,{{ preauth_chart_b64 }}" alt=""/>
+        <h3>More Than One Distribution</h3>
+        <img src="data:image/png;base64,{{ multiple_chart_b64 }}" alt=""/>
       </section>
       <section class="chart-section">
         <h4>Age Distribution</h4>
-        <img src="data:image/png;base64,{{ preauth_age_b64 }}" alt=""/>
-        <div class="callouts">{{ preauth_age_callouts|safe }}</div>
+        <img src="data:image/png;base64,{{ multiple_age_b64 }}" alt=""/>
+        <div class="callouts">{{ multiple_age_callouts|safe }}</div>
         <h4>Gender Distribution</h4>
-        <img src="data:image/png;base64,{{ preauth_gender_b64 }}" alt=""/>
-        <div class="callouts">{{ preauth_gender_callouts|safe }}</div>
-        {% if map_preauth_b64 %}
-          <img src="data:image/png;base64,{{ map_perauth_b64 }}" alt="Map View">
+        <img src="data:image/png;base64,{{ multiple_gender_b64 }}" alt=""/>
+        <div class="callouts">{{ multiple_gender_callouts|safe }}</div>
+        {% if map_multiple_b64 %}
+          <img src="data:image/png;base64,{{ map_multiple_b64 }}" alt="Map View">
         {% endif %}
       </section>
     {% endif %}

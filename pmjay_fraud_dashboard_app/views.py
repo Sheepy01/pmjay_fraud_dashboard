@@ -3757,7 +3757,15 @@ def download_ophthalmology_pdf_report(request):
                 'preauth_time': bool(
                     c.preauth_initiated_time and
                     not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
-                )
+                ),
+                'num_true': sum([
+                    bool(c.age_years and c.age_years < 40),
+                    c.id in flagged_ot,
+                    bool(
+                        c.preauth_initiated_time and
+                        not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
+                    )
+                ])
             }
             for i, c in enumerate(qs_iter)
         ]

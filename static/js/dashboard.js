@@ -2740,10 +2740,6 @@ $(document).ready(function() {
                     const {startDate, endDate} = getDateRange();
                     const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
                     
-                    // renderGeoMap({
-                    //     url: `/get-ophthalmology-violations-geo/?type=all${baseParams}`,
-                    //     containerId: "ophthalmologyCataractMapAll"
-                    // });
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=age${baseParams}`,
                         containerId: "ophthalmologyCataractMapAge40"
@@ -3335,7 +3331,7 @@ $(document).ready(function() {
             fd.append('geo_anomalies', shot.dataUrl);
         }
         else if (cardId === 'ophthalmology') {
-            const Viewall = window.ophthAllView;
+            // const Viewall = window.ophthAllView;
             const Viewage = window.ophthAgeView;
             const Viewot = window.ophthOtView;
             const Viewpreauth = window.ophthPreauthView;
@@ -3345,12 +3341,12 @@ $(document).ready(function() {
             fd.append('violation_type', violationType);
 
             if (violationType == 'all') {
-                shotAll = await Viewall.takeScreenshot();
+                // shotAll = await Viewall.takeScreenshot();
                 shotAge = await Viewage.takeScreenshot();
                 shotOt = await Viewot.takeScreenshot();
                 shotPreauth = await Viewpreauth.takeScreenshot();
                 shotMultiple = await Viewmultiple.takeScreenshot();
-                fd.append('map_all', shotAll.dataUrl);
+                // fd.append('map_all', shotAll.dataUrl);
                 fd.append('map_age', shotAge.dataUrl);
                 fd.append('map_ot', shotOt.dataUrl);
                 fd.append('map_preauth', shotPreauth.dataUrl);
@@ -3371,7 +3367,7 @@ $(document).ready(function() {
             
             // bar charts
             // combined (all), age, ot, preauth
-            ['Combined','Age','Ot','Preauth'].forEach(section => {
+            ['Age','Ot','Preauth','Multiple'].forEach(section => {
               const key = section.toLowerCase();
               // e.g. 'ophthCombinedChart', 'ophthAgeChart', etc.
               const canvasId = `ophth${section}Chart`;
@@ -3379,7 +3375,7 @@ $(document).ready(function() {
             });
           
             // pie charts & callouts
-            ['All','Age','Ot','Preauth'].forEach(section => {
+            ['Age','Ot','Preauth','Multiple'].forEach(section => {
               const low = section.toLowerCase();
               // pie charts
               fd.append(`${low}_age_chart`,    safeCanvasDataURL(`ophth${section}AgeChart`));
