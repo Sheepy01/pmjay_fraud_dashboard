@@ -3286,6 +3286,8 @@ $(document).ready(function() {
             });
         }
         else if(cardId === 'hospital-beds') {
+            const shot = await window.hospitalBedViolationsView.takeScreenshot();
+            fd.append('hospital_beds', shot.dataUrl);
             fd.append('hospital_chart',
                 safeCanvasDataURL('hospitalDistrictChart')
             );
@@ -3314,6 +3316,8 @@ $(document).ready(function() {
                 'gender_callouts',
                 safeInnerHTML('familyGenderCallouts')
             );
+            const shot = await window.familyIdViolationsView.takeScreenshot();
+            fd.append('family_id', shot.dataUrl);
         }
         else if (cardId === 'geo-anomalies') {
             // Bar chart
@@ -3574,6 +3578,10 @@ $(document).ready(function() {
                 window.highValueViewMedical = view;
             } else if (containerId == "highValueMapSurgical") {
                 window.highValueViewSurgical = view;
+            } else if (containerId == "hospitalBedMap") {
+                window.hospitalBedViolationsView = view;
+            } else if (containerId == "familyIdMap") {
+                window.familyIdViolationsView = view;
             }
 
             // disable zoom & pan gestures at the API level

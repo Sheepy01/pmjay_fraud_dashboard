@@ -3012,6 +3012,9 @@ def download_hospital_bed_report(request):
     hc = request.POST.get('hospital_chart','')
     hospital_chart_b64 = hc.split('base64,',1)[1] if 'base64,' in hc else ''
 
+    hc_map = request.POST.get('hospital_beds', '')
+    hosp_bed_map_b64 = hc_map.split('base64,',1)[1] if 'base64,' in hc_map else ''
+
     # 2) Build full violations list (no pagination)
     beds = {b['hospital_id']: b['bed_strength']
             for b in HospitalBeds.objects.values('hospital_id','bed_strength')}
@@ -3061,6 +3064,7 @@ def download_hospital_bed_report(request):
       'report_districts': report_districts,
       'table_rows':       rows,
       'hospital_chart_b64': hospital_chart_b64,
+      'hosp_bed_map_b64': hosp_bed_map_b64,
     }
     html = render_to_string('hospital_bed_report.html', context)
     pdf  = HTML(string=html, base_url=request.build_absolute_uri('/')).write_pdf()
@@ -3195,6 +3199,7 @@ def download_family_id_cases_report(request):
     gender_b64       = strip_b64('family_gender_chart')
     age_callouts     = request.POST.get('age_callouts','')
     gender_callouts  = request.POST.get('gender_callouts','')
+    family_id_map_b64 = strip_b64('family_id')
 
     # subquery families with >2 claims today
     freq_families = Last24Hour.objects.annotate(
@@ -3242,6 +3247,7 @@ def download_family_id_cases_report(request):
         'gender_b64':          gender_b64,
         'age_callouts':        age_callouts,
         'gender_callouts':     gender_callouts,
+        'family_id_map_b64':   family_id_map_b64,
     }
     html_string = render_to_string('family_id_report.html', context)
 

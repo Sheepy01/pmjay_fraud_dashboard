@@ -120,6 +120,9 @@
     <section class="chart-section">
       <h3>District-wise Bed Violations</h3>
       <img src="data:image/png;base64,{{ hospital_chart_b64 }}" alt=""/>
+      {% if hosp_bed_map_b64 %}
+          <img src="data:image/png;base64,{{ hosp_bed_map_b64 }}" alt="Hospital Bed Violations Map">
+      {% endif %}
     </section>
   </main>
 </body></html>

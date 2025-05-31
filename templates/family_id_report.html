@@ -111,6 +111,9 @@
       <h4>Gender Distribution</h4>
       <img src="data:image/png;base64,{{ gender_b64 }}" alt=""/>
       <div class="callouts">{{ gender_callouts|safe }}</div>
+      {% if family_id_map_b64 %}
+        <img src="data:image/png;base64,{{ family_id_map_b64 }}" alt="Family Id Map View">
+      {% endif %}
     </section>
   </main>
 </body></html>
