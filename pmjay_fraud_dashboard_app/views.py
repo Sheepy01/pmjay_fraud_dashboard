@@ -3493,6 +3493,19 @@ def download_ophthalmology_excel(request):
             return base_qs.exclude(
                 preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
             )
+        if t == 'multiple':
+            # Multiple: more than one violation among age, ot, preauth
+            age_ids = set(base_qs.filter(age_years__lt=40).values_list('id', flat=True))
+            ot_ids = set(flagged_ot_ids)
+            preauth_ids = set(base_qs.exclude(
+                preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
+            ).values_list('id', flat=True))
+            # Count how many violations per case
+            from collections import Counter
+            all_ids = list(age_ids) + list(ot_ids) + list(preauth_ids)
+            counts = Counter(all_ids)
+            multiple_ids = [cid for cid, cnt in counts.items() if cnt > 1]
+            return base_qs.filter(id__in=multiple_ids)
         # 'all'
         return base_qs.filter(
             Q(age_years__lt=40) |
@@ -3543,6 +3556,17 @@ def download_ophthalmology_excel(request):
                     not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
                 ))
             ]
+        },
+        'multiple': {
+            'title': 'More Than One Violation',
+            'fields': common + [
+                ('Age<40',       lambda c,i: bool(c.age_years and c.age_years < 40)),
+                ('OT Cases',     lambda c,i: c.id in flagged_ot_ids),
+                ('Pre-auth Out', lambda c,i: bool(
+                    c.preauth_initiated_time and
+                    not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
+                ))
+            ]
         }
     }
 
@@ -3550,7 +3574,7 @@ def download_ophthalmology_excel(request):
     if violation_type in sheets and violation_type != 'all':
         keys = [violation_type]
     else:
-        keys = ['all','age','ot','preauth']
+        keys = ['all','age','ot','preauth','multiple']
 
     # —8— Build a DataFrame for each sheet
     dfs = {}
@@ -3569,7 +3593,8 @@ def download_ophthalmology_excel(request):
             'age':      PatternFill('solid', fgColor="FFEB3B"),
             'ot':       PatternFill('solid', fgColor="E91E63"),
             'preauth':  PatternFill('solid', fgColor="009688"),
-            'all_high': PatternFill('solid', fgColor="FFCDD2")
+            'all_high': PatternFill('solid', fgColor="FFCDD2"),
+            'multiple': PatternFill('solid', fgColor="607D8B"),
         }
 
         for key in keys:
@@ -3602,6 +3627,14 @@ def download_ophthalmology_excel(request):
                 if key=='all' and av and ov and pv:
                     for cell in row:
                         cell.fill = fills['all_high']
+
+                if key == 'multiple':
+                    if av and a_i:
+                        row[a_i-1].fill = fills['age']
+                    if ov and o_i:
+                        row[o_i-1].fill = fills['ot']
+                    if pv and p_i:
+                        row[p_i-1].fill = fills['preauth']
 
     output.seek(0)
     # —10— Build filename with date range
@@ -3640,14 +3673,20 @@ def download_ophthalmology_pdf_report(request):
 
     # —4— Collect chart images & callouts
     charts = {
-        'combined_chart': strip_b64('combined_chart'),
+        # 'combined_chart': strip_b64('combined_chart'),
         'age_chart':      strip_b64('age_chart'),
         'ot_chart':       strip_b64('ot_chart'),
         'preauth_chart':  strip_b64('preauth_chart'),
+        'multiple_chart': strip_b64('multiple_chart'),
+        'map_all':        strip_b64('map_all'),
+        'map_age':        strip_b64('map_age'),
+        'map_ot':         strip_b64('map_ot'),
+        'map_preauth':    strip_b64('map_preauth'),
+        'map_multiple':   strip_b64('map_multiple'),
     }
     pies = {}
     callouts = {}
-    for section in ['all','age','ot','preauth']:
+    for section in ['all','age','ot','preauth','multiple']:
         pies[f'{section}_age']    = strip_b64(f'{section}_age_chart')
         pies[f'{section}_gender'] = strip_b64(f'{section}_gender_chart')
         callouts[f'{section}_age']    = request.POST.get(f'{section}_age_callouts','')
@@ -3700,7 +3739,7 @@ def download_ophthalmology_pdf_report(request):
 
     # —8— Build rows for each section
     rows = {}
-    for sec in ['all','age','ot','preauth']:
+    for sec in ['all','age','ot','preauth','multiple']:
         qs_iter = section_qs(sec).order_by(
             'preauth_initiated_date','preauth_initiated_time'
         )

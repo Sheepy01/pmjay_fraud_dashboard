@@ -2613,15 +2613,6 @@ $(document).ready(function() {
                 if (violationType === 'all') {
                     container.html(`
                         <div class="chart-group">
-                            <!-- Combined Bar Chart -->
-                            <div class="ophthalmology-combined-bar-header">
-                                <h2>COMBINED</h2>
-                                <div class="chart-container">
-                                    <h4>Combined Distribution</h4>
-                                    <canvas id="ophthCombinedChart"></canvas>
-                                </div>
-                            </div>
-                            
                             <!-- Individual Bar Charts -->
                             <div class="ophthalmology-age-bar-header">
                                 <h2>Age Less Than 40</h2>
@@ -2647,20 +2638,16 @@ $(document).ready(function() {
                                 </div>
                             </div>
 
+                            <div class="ophthalmology-multiple-bar-header">
+                                <h2>More Than One Cases</h2>
+                                <div class="chart-container">
+                                    <h4>More Than One Distribution</h4>
+                                    <canvas id="ophthMultipleChart"></canvas>
+                                </div>
+                            </div>
+
                             <!-- Pie Charts Container -->
                             <div class="dual-pie-container">
-                                <!-- Combined Pies -->
-                                <div class="pie-card">
-                                    <h4>Combined Age</h4>
-                                    <canvas id="ophthAllAgeChart"></canvas>
-                                    <div class="chart-callouts" id="ophthAllAgeCallouts"></div>
-                                </div>
-                                <div class="pie-card">
-                                    <h4>Combined Gender</h4>
-                                    <canvas id="ophthAllGenderChart"></canvas>
-                                    <div class="chart-callouts" id="ophthAllGenderCallouts"></div>
-                                </div>
-
                                 <!-- Age <40 Pies -->
                                 <div class="pie-card">
                                     <h4>Age &lt;40 Age</h4>
@@ -2696,14 +2683,20 @@ $(document).ready(function() {
                                     <canvas id="ophthPreauthGenderChart"></canvas>
                                     <div class="chart-callouts" id="ophthPreauthGenderCallouts"></div>
                                 </div>
+
+                                <!-- More Than One Pies -->
+                                <div class="pie-card">
+                                    <h4>More Than One Age</h4>
+                                    <canvas id="ophthMultipleAgeChart"></canvas>
+                                    <div class="chart-callouts" id="ophthMultipleAgeCallouts"></div>
+                                </div>
+                                <div class="pie-card">
+                                    <h4>More Than One Gender</h4>
+                                    <canvas id="ophthMultipleGenderChart"></canvas>
+                                    <div class="chart-callouts" id="ophthMultipleGenderCallouts"></div>
+                                </div>
                             </div>
                             <div class="map-group">
-                                <div class="map-container-all">
-                                    <div class="map-card">
-                                        <h4>Combined Map</h4>
-                                        <div id="ophthalmologyCataractMapAll" class="map-view-node" style="height:600px;"></div>
-                                    </div>
-                                </div>
                                 <div class="map-container-age">
                                     <div class="map-card">
                                         <h4>Age < 40</h4>
@@ -2732,7 +2725,7 @@ $(document).ready(function() {
                         </div>
                     `);
                     
-                    ['all', 'age', 'ot', 'preauth'].forEach(type => {
+                    ['age', 'ot', 'preauth', 'multiple'].forEach(type => {
                         const canvasId = type === 'all' 
                         ? 'ophthCombinedChart' 
                         : `ophth${this.capitalize(type)}Chart`;
@@ -2740,17 +2733,17 @@ $(document).ready(function() {
                     });
 
                     this.loadPieCharts('all', districts); // Combined pies
-                    ['age', 'ot', 'preauth'].forEach(type => {
+                    ['age', 'ot', 'preauth', 'multiple'].forEach(type => {
                         this.loadPieCharts(type, districts); // Individual violation pies
                     });
 
                     const {startDate, endDate} = getDateRange();
                     const baseParams = `&district=${districts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
                     
-                    renderGeoMap({
-                        url: `/get-ophthalmology-violations-geo/?type=all${baseParams}`,
-                        containerId: "ophthalmologyCataractMapAll"
-                    });
+                    // renderGeoMap({
+                    //     url: `/get-ophthalmology-violations-geo/?type=all${baseParams}`,
+                    //     containerId: "ophthalmologyCataractMapAll"
+                    // });
                     renderGeoMap({
                         url: `/get-ophthalmology-violations-geo/?type=age${baseParams}`,
                         containerId: "ophthalmologyCataractMapAge40"
@@ -3342,9 +3335,40 @@ $(document).ready(function() {
             fd.append('geo_anomalies', shot.dataUrl);
         }
         else if (cardId === 'ophthalmology') {
+            const Viewall = window.ophthAllView;
+            const Viewage = window.ophthAgeView;
+            const Viewot = window.ophthOtView;
+            const Viewpreauth = window.ophthPreauthView;
+            const Viewmultiple = window.ophthMultipleView;
+
             const violationType = modal.dataset.violationType || 'all';
             fd.append('violation_type', violationType);
-          
+
+            if (violationType == 'all') {
+                shotAll = await Viewall.takeScreenshot();
+                shotAge = await Viewage.takeScreenshot();
+                shotOt = await Viewot.takeScreenshot();
+                shotPreauth = await Viewpreauth.takeScreenshot();
+                shotMultiple = await Viewmultiple.takeScreenshot();
+                fd.append('map_all', shotAll.dataUrl);
+                fd.append('map_age', shotAge.dataUrl);
+                fd.append('map_ot', shotOt.dataUrl);
+                fd.append('map_preauth', shotPreauth.dataUrl);
+                fd.append('map_multiple', shotMultiple.dataUrl);
+            } else if (violationType == 'age') {
+                shotAge = await Viewage.takeScreenshot();
+                fd.append('map_age', shotAge.dataUrl);
+            } else if (violationType == 'ot') {
+                shotOt = await Viewot.takeScreenshot();
+                fd.append('map_ot', shotOt.dataUrl);
+            } else if (violationType == 'preauth') {
+                shotPreauth = await Viewpreauth.takeScreenshot();
+                fd.append('map_preauth', shotPreauth.dataUrl);
+            } else if (violationType == 'multiple') {
+                shotMultiple = await Viewmultiple.takeScreenshot();
+                fd.append('map_multiple', shotMultiple.dataUrl);
+            }
+            
             // bar charts
             // combined (all), age, ot, preauth
             ['Combined','Age','Ot','Preauth'].forEach(section => {
@@ -3586,6 +3610,16 @@ $(document).ready(function() {
                 window.familyIdViolationsView = view;
             } else if (containerId == "geoAnomaliesMap") {
                 window.geoAnomaliesView = view;
+            } else if (containerId == "ophthalmologyCataractMapAll") {
+                window.ophthAllView = view;
+            } else if (containerId == "ophthalmologyCataractMapAge40") {
+                window.ophthAgeView = view;
+            } else if (containerId == "ophthalmologyCataractMapPreauthTime") {
+                window.ophthPreauthView = view;
+            } else if (containerId == "ophthalmologyCataractMapOTCase") {
+                window.ophthOtView = view;
+            } else if (containerId == "ophthalmologyCataractMapMoreThanOneCase") {
+                window.ophthMultipleView = view;
             }
 
             // disable zoom & pan gestures at the API level
