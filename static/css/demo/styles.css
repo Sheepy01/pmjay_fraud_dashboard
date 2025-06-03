@@ -1931,3 +1931,17 @@ white-space: nowrap;
     transform: translateY(-5px);
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
+
+.esri-legend {
+    transform: scale(0.6);   /* 80% size, adjust as needed */
+    transform-origin: top right;
+    font-size: 14px !important;
+    font-weight: bold;
+    padding: 4px !important;
+}
+.esri-legend__service {
+    margin-bottom: 4px !important;
+}
+.esri-legend__layer-caption {
+    font-size: 12px !important;
+}

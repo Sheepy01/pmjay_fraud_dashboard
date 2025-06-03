@@ -162,9 +162,7 @@ $(function(){
         currentStartDate = startDate;
         currentEndDate = endDate;
 
-        loadTableData(1);
-        loadChartData();
-        loadDemographics();
+        triggerFilterUpdate();
     });
 
     // ======================
@@ -219,7 +217,6 @@ $(function(){
         document.body.removeChild(link);
     });
 
-
     // Add CSRF token handling
     function getCSRFToken() {
         return document.querySelector('[name=csrfmiddlewaretoken]').value;
@@ -271,43 +268,81 @@ $(function(){
             fd.append(`${type}_chart`, canvas.toDataURL());
         });
         
+        
         fd.append('district', districts.join(','));
-    
-        // Fire the request
-        fetch(window.HIGH_ALERT_URLS.pdf, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: fd
-        })
-        .then(response => response.blob())
-        .then(blob => {
-            clearInterval(interval);
-            progressBar.style.width = '100%';
-            progressTxt.textContent = '100%';
-            
-            setTimeout(() => {
+        
+        // --- ArcGIS Map Screenshot ---
+        if (window.highAlertMapView && window.highAlertMapView.ready) {
+            window.highAlertMapView.takeScreenshot().then(function(screenshot) {
+                fd.append('map_image', screenshot.dataUrl); // <-- Add map image as base64 PNG
+
+                // Now send the request
+                fetch(window.HIGH_ALERT_URLS.pdf, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    },
+                    body: fd
+                })
+                .then(response => response.blob())
+                .then(blob => {
+                    clearInterval(interval);
+                    progressBar.style.width = '100%';
+                    progressTxt.textContent = '100%';
+                    setTimeout(() => {
+                        loader.classList.remove('show');
+                        downloadBtn.disabled = false;
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `high_alerts_report_${Date.now()}.pdf`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                    }, 200);
+                })
+                .catch(err => {
+                    console.error('PDF generation failed:', err);
+                    clearInterval(interval);
+                    loader.classList.remove('show');
+                    downloadBtn.disabled = false;
+                });
+            });
+        } else {
+            // fallback: send without map image
+            fetch(window.HIGH_ALERT_URLS.pdf, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: fd
+            })
+            .then(response => response.blob())
+            .then(blob => {
+                clearInterval(interval);
+                progressBar.style.width = '100%';
+                progressTxt.textContent = '100%';
+                setTimeout(() => {
+                    loader.classList.remove('show');
+                    downloadBtn.disabled = false;
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `high_alerts_report_${Date.now()}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 200);
+            })
+            .catch(err => {
+                console.error('PDF generation failed:', err);
+                clearInterval(interval);
                 loader.classList.remove('show');
                 downloadBtn.disabled = false;
-    
-                // Trigger download
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `high_alerts_report_${Date.now()}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            }, 200);
-        })
-        .catch(err => {
-            console.error('PDF generation failed:', err);
-            clearInterval(interval);
-            loader.classList.remove('show');
-            downloadBtn.disabled = false;
-        });
+            });
+        }
     }
 
     // Add PDF button click handler
@@ -362,6 +397,7 @@ $(function(){
     let districtChart, ageChart, genderChart;
     
     function initCharts() {
+        Chart.register(window.ChartDataLabels);
         // District Bar Chart
         districtChart = new Chart(document.getElementById('districtChart').getContext('2d'), {
             type: 'bar',
@@ -405,13 +441,7 @@ $(function(){
             },
             plugins: {
                 legend: { display: false },
-                datalabels: {
-                    anchor: 'end',
-                    align: 'top',
-                    color: '#26547D',
-                    formatter: value => value > 0 ? value : ''
-                }
-            }
+            },
         };
     }
 
@@ -440,9 +470,17 @@ $(function(){
     // Data Loading
     // ======================
     function loadAllVisualizations() {
+        const {startDate, endDate} = getDateRange()
         loadTableData();
         loadChartData();
         loadDemographics();
+        const url = `/high-alerts-geo/?district=${selectedDistricts.join(',')}&start_date=${startDate}&end_date=${endDate}`;
+        renderGeoMap({
+            url: url,
+            containerId: "highAlertMap",
+            countKey: "count", // or whatever your API returns
+            fidKey: "fid"      // or "FID" if uppercase
+        });
     }
 
     function loadChartData() {
@@ -461,6 +499,12 @@ $(function(){
                 districtChart.data.labels = data.labels;
                 districtChart.data.datasets[0].data = data.counts;
                 districtChart.update();
+
+                const countLookup = {};
+                data.labels.forEach((district, i) => {
+                    countLookup[district] = data.counts[i];
+                });
+                // initHighAlertMap(countLookup);
             }
         });
     }
@@ -485,6 +529,158 @@ $(function(){
                 }
             });
         });
+    }
+
+    function initHighAlertMap(countLookup, containerId="highAlertMap") {
+        // console.log(countLookup)
+        if (window.highAlertMapView) {
+            window.highAlertMapView.destroy();
+            window.highAlertMapView = null;
+            // Also clear the container's innerHTML to remove any leftover DOM
+            document.getElementById(containerId).innerHTML = "";
+        }
+        const colorPalettes = {
+            highAlertMap: ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"], // or use mapViewNode palette
+            mapViewNode:  ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        };
+        const palette = colorPalettes[containerId] || colorPalettes.mapViewNode;
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/layers/FeatureLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic",
+            "esri/widgets/Legend"
+        ], (EsriMap, MapView, FeatureLayer, GraphicsLayer, Graphic, Legend) => {
+            const map = new EsriMap({ basemap: null });
+            const svcLayer = new FeatureLayer({
+                url: "https://services6.arcgis.com/D79Nl8HOYMCU0cVt/arcgis/rest/services/bihar_districts/FeatureServer/0",
+                outFields: ["FID","DISTRICT"]
+            });
+            map.add(svcLayer);
+
+            const view = new MapView({
+                container: containerId,
+                map,
+                center: [85.8, 25.9],
+                zoom: 7,
+                constraints: { rotationEnabled: false, minZoom: 7, maxZoom: 7 },
+                ui: { components: [] }
+            });
+
+            const legend = new Legend({ view: view });
+            view.ui.add(legend, "top-right");
+
+            window.highAlertMapView = view;
+
+            view.navigation.mouseWheelZoomEnabled  = false;
+            view.navigation.browserTouchPanEnabled = false;
+            view.on("drag",       e => e.stopPropagation(), true);
+            view.on("mouse-wheel", e => e.stopPropagation(), true);
+            view.on("key-down",   e => { if (e.key.startsWith("Arrow")) e.stopPropagation(); }, true);
+
+            view.whenLayerView(svcLayer)
+            .then(() => svcLayer.queryFeatures({
+                where: "1=1",
+                outFields: ["FID","DISTRICT"],
+                returnGeometry: true
+            }))
+            .then(featureSet => {
+                featureSet.features.forEach(f => {
+                    f.attributes.count = countLookup[f.attributes.FID] || 0;
+                    console.log("Sample feature attributes:", featureSet.features[0].attributes);
+                });
+                const counts   = Object.values(countLookup);
+                const maxCount = counts.length ? Math.max(...counts) : 1;
+                const colorStops = [
+                    { value: 0,               color: palette[0] },
+                    { value: maxCount * 0.25, color: palette[1] },
+                    { value: maxCount * 0.5,  color: palette[2] },
+                    { value: maxCount * 0.75, color: palette[3] },
+                    { value: maxCount,        color: palette[4] }
+                ];
+                const memoryPolygons = new FeatureLayer({
+                    source: featureSet.features,
+                    fields: [
+                        ...svcLayer.fields,
+                        { name: "count", alias: "High Alert Count", type: "integer" }
+                    ],
+                    objectIdField: svcLayer.objectIdField,
+                    geometryType: svcLayer.geometryType,
+                    spatialReference: svcLayer.spatialReference,
+                    renderer: {
+                        type: "simple",
+                        symbol: { type: "simple-fill", outline: { color: "#aaa", width: 0.5 } },
+                        visualVariables: [{
+                            type: "color",
+                            field: "count",
+                            stops: colorStops
+                        }]
+                    },
+                    labelingInfo: [{
+                        labelExpressionInfo: { expression: "$feature.DISTRICT" },
+                        symbol: {
+                            type: "text",
+                            color: "#000",
+                            haloColor: "#fff",
+                            haloSize: "1px",
+                            font: { size: "12px", weight: "bold" }
+                        },
+                        labelPlacement: "always-horizontal"
+                    }]
+                });
+                map.remove(svcLayer);
+                map.add(memoryPolygons);
+
+                // Circles
+                const circleLayer = new GraphicsLayer();
+                map.add(circleLayer);
+                const minSize = 12, maxSize = 60;
+                featureSet.features.forEach(feat => {
+                    const cnt = feat.attributes.count;
+                    if (!cnt) return;
+                    const center = feat.geometry.extent.center;
+                    const size   = minSize + (cnt / maxCount) * (maxSize - minSize);
+                    circleLayer.add(new Graphic({
+                        geometry: center,
+                        symbol: {
+                            type: "simple-marker",
+                            style: "circle",
+                            size: size,
+                            color: "#e34234",
+                            outline: { color: "#fff", width: 0.5 }
+                        }
+                    }));
+                    circleLayer.add(new Graphic({
+                        geometry: center,
+                        symbol: {
+                            type: "text",
+                            text: String(cnt),
+                            color: "#fff",
+                            haloColor: "#000",
+                            haloSize: "0.5px",
+                            font: { size: "14px", weight: "bold" },
+                            horizontalAlignment: "center",
+                            verticalAlignment: "middle",
+                            xoffset: 0,
+                            yoffset: 4
+                        }
+                    }));
+                });
+            })
+            .catch(err => console.error("Map layering error:", err));
+        });
+    }
+
+    function renderGeoMap({ url, containerId, countKey="count", fidKey="fid" }) {
+        fetch(url)
+            .then(r => r.json())
+            .then(geoCounts => {
+                const lookup = {};
+                geoCounts.forEach(d => { lookup[d.fid] = d[countKey]; });
+                initHighAlertMap(lookup, containerId);
+            })
+            .catch(err => console.error("Geo-counts fetch error:", err));
     }
 
     // ======================

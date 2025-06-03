@@ -81,6 +81,8 @@ class HospitalBeds(models.Model):
     hospital_id = models.CharField(max_length=50, unique=True)
     hospital_name = models.CharField(max_length=50, null=True, blank=True)
     bed_strength = models.IntegerField()
+    number_of_surgeons = models.IntegerField(null=True, blank=True)
+    number_of_ot = models.IntegerField(null=True, blank=True)
 
 class UploadHistory(models.Model):
     MODEL_CHOICES = [

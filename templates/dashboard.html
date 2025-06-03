@@ -34,11 +34,11 @@
         <div class="card-column main-column">
             <!-- Flagged Claims Card -->
             <div class="card flagged-claims" 
-            data-modal-title="Flagged Claims Details">
+            data-modal-title="Flagged Claims Details"
+            data-download-url="{% url 'download_flagged_claims' %}"
+            data-district="{{ district_param|urlencode }}">
                 <button id="download-flagged" 
-                class="download-btn"  
-                data-download-url="{% url 'download_flagged_claims' %}" 
-                data-district="{{ district_param|urlencode }}">
+                class="download-btn">  
                     <i class="fas fa-download"></i>
                     <span class="btn-text"></span>
                 </button>
@@ -334,43 +334,6 @@
             
             <!-- Scrollable content area -->
             <div class="modal-content" id="modalContent">
-                <!-- Table container -->
-                <div class="data-table-container">
-                    <button class="table-download-btn">
-                        <i class="fas fa-download"></i> Export Excel
-                    </button>
-                    <div class="table-footer">
-                        Showing <span id="rowCount">0</span> records
-                    </div>
-                </div>
-                
-                <!-- Bar Chart Container -->
-                <div class="chart-container">
-                    <h4>District-wise Flagged Claims Distribution</h4>
-                    <canvas id="flaggedClaimsChart"></canvas>
-                    <div class="chart-legend" id="flaggedClaimsLegend"></div>
-                </div>
-                
-                <!-- Dual Pie Charts Container -->
-                <div class="dual-pie-container">
-                    <!-- Age Distribution Pie -->
-                    <div class="pie-card">
-                        <h4>Age Group Distribution</h4>
-                        <div class="chart-wrapper">
-                            <canvas id="agePieChart"></canvas>
-                            <div class="chart-callouts" id="ageCallouts"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- Gender Distribution Pie -->
-                    <div class="pie-card">
-                        <h4>Gender Distribution</h4>
-                        <div class="chart-wrapper">
-                            <canvas id="genderPieChart"></canvas>
-                            <div class="chart-callouts" id="genderCallouts"></div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -388,6 +351,8 @@
         ophthalmology: "{% url 'download_ophthalmology_pdf_report' %}"
       };
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <link rel="stylesheet" href="https://js.arcgis.com/4.25/esri/themes/light/main.css">
   <script src="https://js.arcgis.com/4.25/"></script>
   <script src="{% static 'js/dashboard.js' %}"></script>

@@ -126,6 +126,12 @@
             
             <h3>Gender Distribution</h3>
             {% if gender_b64 %}<img src="data:image/png;base64,{{ gender_b64 }}" alt="">{% endif %}
+
+            <h3>Heat Map</h3>
+            {% if map_b64 %}
+              <h3>High Alert Map</h3>
+              <img src="data:image/png;base64,{{ map_b64 }}" alt="High Alert Map" style="width:100%;max-width:700px;">
+            {% endif %}
         </section>
     </main>
 </body>

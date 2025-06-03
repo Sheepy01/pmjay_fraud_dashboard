@@ -326,8 +326,9 @@ $(document).ready(function() {
 
     $(function(){
         $('#download-flagged').on('click', function(){
-            const baseUrl  = $(this).data('download-url');
-            const district = $(this).data('district') || '';
+            const $card    = $(this).closest('.card.flagged-claims');
+            const baseUrl  = $card.data('download-url');
+            const district = $card.data('district') || '';
             const { startDate, endDate } = getDateRange();
             const params = new URLSearchParams();
             if (district)           params.append('district',   district);
@@ -447,17 +448,6 @@ $(document).ready(function() {
         const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
-      
-      // Modal Excel download (works for any card)
-      $(document).on('click', '.modal-container .table-download-btn', function(e){
-        e.preventDefault();
-        const $modal   = $(this).closest('.modal-container');
-        let   url      = $modal.data('excel-url');
-        const district = $modal.data('district') || '';
-      
-        if (district) url += '?district=' + encodeURIComponent(district);
-        window.location.href = url;
-      });
 
     function updateFamilyIdCases(districts = [], startDate = '', endDate = '') {
         $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
@@ -511,21 +501,6 @@ $(document).ready(function() {
         const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
-    
-    // Modal “Export Excel” (works for all cards once data-excel-url is set)
-    $(document).on('click', '.modal-container .table-download-btn', function(e){
-        e.preventDefault();
-        const $modal   = $(this).closest('.modal-container');
-        let   baseUrl      = $modal.data('excel-url');
-        const district = $modal.data('district') || '';
-        const { startDate, endDate } = getDateRange();
-        const params = new URLSearchParams();
-        if (district)           params.append('district',   district);
-        if (startDate)          params.append('start_date', startDate);
-        if (endDate)            params.append('end_date',   endDate);
-        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
-        window.location.href = url;
-    });
 
     function updateGeoAnomalies(districts = [], startDate = '', endDate = '') {
         $.ajax({
@@ -562,17 +537,6 @@ $(document).ready(function() {
         const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
         window.location.href = url;
     });
-    
-    // Modal “Export Excel” (shared)
-    $(document).on('click', '.modal-container .table-download-btn', function(e){
-        e.preventDefault();
-        const $modal   = $(this).closest('.modal-container');
-        let   url      = $modal.data('excel-url');
-        const district = $modal.data('district') || '';
-        if (district) url += '?district=' + encodeURIComponent(district);
-        window.location.href = url;
-    });
-  
 
     function updateOphthalmology(districts = [], startDate = '', endDate = '') {
         $.ajax({
@@ -623,17 +587,19 @@ $(document).ready(function() {
         const url = baseUrl + (params.toString() ? `&${params.toString()}` : '');
         window.location.href = url;
     });
-    
-    // 2) Modal “Export Excel” (works for all sub-types)
+
     $(document).on('click', '.modal-container .table-download-btn', function(e) {
         e.preventDefault();
-        const $modal    = $(this).closest('.modal-container');
-        let   url       = $modal.data('excel-url');
-        const district  = $modal.data('district') || '';
-        // grab the active violationType from your controller
-        const type      = ModalController.currentViolationType || 'all';
-        url += `?type=${type}`;
-        if (district) url += `&district=${encodeURIComponent(district)}`;
+        const $m        = $(e.currentTarget).closest('.modal-container');
+        const baseUrl   = $m.data('excel-url');
+        const district  = $m.data('district') || '';
+        const { startDate, endDate } = getDateRange();
+        const params = new URLSearchParams();
+        if (district)   params.append('district', district);
+        if (startDate)  params.append('start_date', startDate);
+        if (endDate)    params.append('end_date', endDate);
+        const url = baseUrl + (params.toString() ? `?${params.toString()}` : '');
+        console.log(url);
         window.location.href = url;
     });
 
@@ -913,6 +879,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.parsed.y} claims`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -930,7 +905,8 @@ $(document).ready(function() {
                                 }
                             }
                         }
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
             },
             
@@ -1402,6 +1378,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.dataset.label}: ${context.parsed.y}`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -1424,7 +1409,8 @@ $(document).ready(function() {
                                 this.handleChartResize();
                             }
                         },
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
             },
             loadDemographics: function(caseType, districts, ageCanvasId, genderCanvasId, ageCalloutId, genderCalloutId, startDate, endDate) {
@@ -1671,6 +1657,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.parsed.y} hospitals in ${context.label}`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -1688,7 +1683,8 @@ $(document).ready(function() {
                                 }
                             }
                         }
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
             },
             updatePaginationUI: function(pagination) {
@@ -1934,6 +1930,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.parsed.y} family violations`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -1951,7 +1956,8 @@ $(document).ready(function() {
                                 }
                             }
                         }
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
             },
             renderPieChart: function(canvasId, data, calloutId) {
@@ -2254,6 +2260,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.parsed.y} state mismatches`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -2271,7 +2286,8 @@ $(document).ready(function() {
                                 }
                             }
                         }
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
             },
             renderPieChart: function(canvasId, data, calloutId) {
@@ -2871,6 +2887,15 @@ $(document).ready(function() {
                                 callbacks: {
                                     label: context => `${context.dataset.label}: ${context.parsed.y}`
                                 }
+                            },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'end',
+                                color: '#222',
+                                font: { weight: 'regular' },
+                                formatter: function(value) {
+                                    return value;
+                                }
                             }
                         },
                         scales: {
@@ -2900,7 +2925,8 @@ $(document).ready(function() {
                             duration: 1000,
                             easing: 'easeOutQuart'
                         }
-                    }
+                    },
+                    plugins: [ChartDataLabels]
                 });
 
                 // Generate legend
@@ -3476,8 +3502,16 @@ $(document).ready(function() {
                 const $m        = $(e.currentTarget).closest('.modal-container');
                 const baseUrl   = $m.data('excel-url');
                 const district  = $m.data('district') || '';
+                const startDate     = $m.data('start-date') || '';
+                const endDate      = $m.data('end-date')   || '';
+                const params = new URLSearchParams();
+                if (district) params.append('district',   district);
+                if (startDate)    params.append('start_date', startDate);
+                if (endDate)      params.append('end_date',   endDate);
                 let url         = baseUrl;
-                if (district) url += '?district=' + encodeURIComponent(district);
+                if (params.toString()) {
+                    url += '?' + params.toString();
+                }
                 window.location.href = url;
             });
         },
@@ -3488,13 +3522,16 @@ $(document).ready(function() {
           const detailsUrl = $card.data('details-url');
           const excelUrl   = $card.data('download-url');
           const district   = $card.data('district') || '';
+          const {startDate, endDate} = getDateRange();
       
           // 2) stash them on the modal container
           const $modalCont = $('#modalOverlay .modal-container');
           $modalCont
             .data('details-url', detailsUrl).attr('data-details-url', detailsUrl)
             .data('excel-url',   excelUrl).  attr('data-excel-url',   excelUrl)
-            .data('district',    district). attr('data-district',    district);
+            .data('district',    district). attr('data-district',    district)
+            .data('start-date',  startDate).    attr('data-start-date',  startDate)
+            .data('end-date',    endDate).      attr('data-end-date',    endDate);
       
           // 3) rest of your open() as before…
           const template = cardTemplates[cardId] || { /* … */ };
@@ -3565,8 +3602,9 @@ $(document).ready(function() {
             "esri/views/MapView",
             "esri/layers/FeatureLayer",
             "esri/layers/GraphicsLayer",
-            "esri/Graphic"
-        ], (EsriMap, MapView, FeatureLayer, GraphicsLayer, Graphic) => {
+            "esri/Graphic",
+            "esri/widgets/Legend"
+        ], (EsriMap, MapView, FeatureLayer, GraphicsLayer, Graphic, Legend) => {
 
             // 1) White background
             const map = new EsriMap({ basemap: null });
@@ -3591,6 +3629,13 @@ $(document).ready(function() {
             },
             ui: { components: [] }
             });
+
+            const legend = new Legend({
+                view: view,
+                // If you want to use a custom container:
+                // container: "mapLegend"
+            });
+            view.ui.add(legend, "top-right");
 
             if (containerId === "mapViewNode") {
                 window.flaggedClaimsView = view;

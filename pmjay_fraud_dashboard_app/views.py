@@ -225,7 +225,7 @@ def upload_management_data(request):
 
         required_columns = {
             'suspicious': ['Hospital Id', 'Hospital Name', 'Number of Surgeons', 'Number of OT'],
-            'beds': ['Hospital ID', 'Bed Strength', 'Hospital Name']
+            'beds': ['Hospital ID', 'Bed Strength', 'Hospital Name', 'Number of Surgeons', 'Number of OT']
         }.get(model_type, [])
 
         if not required_columns:
@@ -272,7 +272,7 @@ def upload_management_data(request):
 
         elif model_type == 'beds':
             # Handle Hospital Beds upload
-            required_columns = ['Hospital ID', 'Bed Strength']
+            required_columns = ['Hospital ID', 'Bed Strength', 'Number of Surgeons', 'Number of OT']
             
             # Fill missing bed_strength with 0
             df['Bed Strength'] = df['Bed Strength'].fillna(0)
@@ -299,7 +299,9 @@ def upload_management_data(request):
                         beds.append(HospitalBeds(
                             hospital_id=row['Hospital ID'],
                             hospital_name=row.get('Hospital Name', ''),
-                            bed_strength=row['Bed Strength']
+                            bed_strength=row['Bed Strength'],
+                            number_of_surgeons=row['Number of Surgeons'],
+                            number_of_ot=row['Number of OT']
                         ))
                     except Exception as e:
                         return JsonResponse({
@@ -349,8 +351,8 @@ def get_management_data(request):
             labels = ['Hospital ID', 'Hospital Name', 'Number of Surgeons', 'Number of OTs']
         elif model_type == 'beds':
             data = HospitalBeds.objects.all()
-            fields = ['hospital_id', 'hospital_name', 'bed_strength']
-            labels = ['Hospital ID', 'Hospital Name', 'Bed Strength']
+            fields = ['hospital_id', 'hospital_name', 'bed_strength', 'number_of_surgeons', 'number_of_ot']
+            labels = ['Hospital ID', 'Hospital Name', 'Bed Strength', 'Number of Surgeons', 'Number of OTs']
         else:
             return HttpResponse('Invalid model type')
             
@@ -376,6 +378,35 @@ def get_districts(request):
     districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
     district_list = [d for d in districts if d]  # Remove None/empty values
     return JsonResponse({'districts': district_list})
+
+def get_ot_overflow_hospital_ids(start_date, end_date, districts=None):
+    cap_map = {
+        rec['hospital_id']: rec['number_of_surgeons'] * 30
+        for rec in HospitalBeds.objects.filter(number_of_surgeons__isnull=False).values('hospital_id', 'number_of_surgeons')
+    }
+    qs = Last24Hour.objects.filter(
+        hospital_type='P',
+        procedure_code__contains='SE',
+        preauth_initiated_date__date__gte=start_date,
+        preauth_initiated_date__date__lte=end_date
+    )
+    if districts:
+        qs = qs.filter(district_name__in=districts)
+    # Fetch all relevant cases at once
+    all_cases = list(qs.values('id', 'hospital_id', 'preauth_initiated_date', 'preauth_initiated_time'))
+    from collections import defaultdict
+    cases_by_hospital = defaultdict(list)
+    for case in all_cases:
+        cases_by_hospital[case['hospital_id']].append(case)
+    flagged_ot_ids = set()
+    for hid, cap in cap_map.items():
+        cases = sorted(
+            cases_by_hospital.get(hid, []),
+            key=lambda x: (x['preauth_initiated_date'], x['preauth_initiated_time'])
+        )
+        if len(cases) > cap:
+            flagged_ot_ids.update([c['id'] for c in cases[cap:]])
+    return flagged_ot_ids
 
 def get_flagged_claims(request):
     # 1. parse district
@@ -732,6 +763,7 @@ def get_flagged_claims_geo_counts(request):
     return JsonResponse(result, safe=False)
 
 def download_flagged_claims_excel(request):
+    print("Request GET:", dict(request.GET))
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
 
@@ -1553,9 +1585,8 @@ def get_family_id_cases(request):
         .filter(count__gt=1)
     )
 
-    # 6) “Total” = all cases for those families in the same window
-    family_ids = [f['family_id'] for f in suspicious_families]
-    cases = base_qs.filter(family_id__in=family_ids)
+    # 6) “Total” = number of unique family_ids with violations
+    violating_family_ids = set(f['family_id'] for f in suspicious_families if f['family_id'])
 
     # 7) Yesterday’s count: same threshold >1
     yest_qs = Last24Hour.objects.filter(
@@ -1573,19 +1604,19 @@ def get_family_id_cases(request):
         .filter(count__gt=1)
         .values_list('family_id', flat=True)
     )
-    yesterday_count = yest_qs.filter(family_id__in=yest_families).count()
+    yesterday_count = len(set(yest_families))
 
-    # 8) Last 30 days: total cases for those suspicious families
+    # 8) Last 30 days: total unique families for those suspicious families
     thr_qs = Last24Hour.objects.filter(
         hospital_type='P',
         preauth_initiated_date__date__gte=thirty_days_ago,
         preauth_initiated_date__date__lte=end_date,
-        family_id__in=family_ids
+        family_id__in=violating_family_ids
     )
     if districts:
         thr_qs = thr_qs.filter(district_name__in=districts)
 
-    violations_last_30_days = thr_qs.count()
+    violations_last_30_days = thr_qs.values('family_id').distinct().count()
 
     # 9) Build detailed list for the JSON “violations” array
     violations = []
@@ -1609,7 +1640,7 @@ def get_family_id_cases(request):
 
     # 10) Return the JSON response
     return JsonResponse({
-        'total':        cases.count(),
+        'total':        len(violating_family_ids),
         'yesterday':    yesterday_count,
         'last_30_days': violations_last_30_days,
         'violations':   violations
@@ -2147,7 +2178,7 @@ def load_dataframes():
     global df_cache, capacity_map
     if df_cache is None:
         # Load hospital capacities
-        capacity_qs = SuspiciousHospital.objects.filter(
+        capacity_qs = HospitalBeds.objects.filter(
             number_of_surgeons__isnull=False
         ).values('hospital_id', 'number_of_surgeons')
         
@@ -2695,13 +2726,13 @@ def download_high_value_claims_excel(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
     except ValueError:
-        start_date = timezone.localdate()
+        start_date = date.today()
     try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
     except ValueError:
-        end_date = timezone.localdate()
+        end_date = date.today()
 
     # 2) base queryset for P-type hospitals
     qs = Last24Hour.objects.filter(
@@ -2743,6 +2774,7 @@ def download_high_value_claims_excel(request):
     df_surgical = pd.DataFrame(serialize(surgical_qs))
     df_medical  = pd.DataFrame(serialize(medical_qs))
 
+    # print(df_medical)
     # 5) write to Excel with two sheets
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -2915,13 +2947,13 @@ def download_hospital_bed_cases_excel(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
     except ValueError:
-        start_date = timezone.localdate()
+        start_date = date.today()
     try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
     except ValueError:
-        end_date = timezone.localdate()
+        end_date = date.today()
 
     # 3) Build bed_strength lookup
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -3082,13 +3114,13 @@ def download_family_id_cases_excel(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
     except ValueError:
-        start_date = timezone.localdate()
+        start_date = date.today()
     try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
     except ValueError:
-        end_date = timezone.localdate()
+        end_date = date.today()
 
     # 3) build the subquery & base queryset
     subq = (
@@ -3271,7 +3303,7 @@ def download_geo_anomalies_excel(request):
     except ValueError:
         start_date = date.today()
     try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
     except ValueError:
         end_date = date.today()
 
@@ -3444,18 +3476,18 @@ def download_ophthalmology_excel(request):
     sd = request.GET.get('start_date')
     ed = request.GET.get('end_date')
     try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
     except (ValueError, TypeError):
-        start_date = timezone.localdate()
+        start_date = date.today()
     try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
+        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
     except (ValueError, TypeError):
-        end_date = timezone.localdate()
+        end_date = date.today()
 
     # —2— Build capacity map
     cap_map = {
         rec['hospital_id']: rec['number_of_surgeons'] * 30
-        for rec in SuspiciousHospital.objects
+        for rec in HospitalBeds.objects
                              .filter(number_of_surgeons__isnull=False)
                              .values('hospital_id', 'number_of_surgeons')
     }
@@ -3705,7 +3737,7 @@ def download_ophthalmology_pdf_report(request):
     # —6— Compute OT-overflow IDs
     cap_map = {
         rec['hospital_id']: rec['number_of_surgeons'] * 30
-        for rec in SuspiciousHospital.objects
+        for rec in HospitalBeds.objects
                                   .filter(number_of_surgeons__isnull=False)
                                   .values('hospital_id','number_of_surgeons')
     }
@@ -3826,6 +3858,8 @@ def high_alert(request):
 
     if districts:
         base_query = base_query.filter(district_name__in=districts)
+
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     annotated_cases = base_query.annotate(
         # Renamed annotations to avoid field conflicts
         is_watchlist=Value(True, output_field=BooleanField()),
@@ -3885,12 +3919,18 @@ def high_alert(request):
             default=Value(False),
             output_field=BooleanField()
         ),
+        is_ot_overflow=Case(
+            When(id__in=flagged_ot_ids, then=Value(True)),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
         is_ophtha_case=Case(
             When(
                 Q(procedure_code__contains='SE') & (
                     Q(age_years__lt=40) |
                     Q(preauth_initiated_time__lt=8) |
-                    Q(preauth_initiated_time__gte=18)
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
                 ),
                 then=Value(True)
             ),
@@ -3970,6 +4010,7 @@ def high_alert_district_distribution(request):
     if districts:
         base_query = base_query.filter(district_name__in=districts)
 
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Apply full high alert criteria annotations
     annotated = base_query.annotate(
         is_watchlist=Value(True, output_field=BooleanField()),
@@ -4034,7 +4075,8 @@ def high_alert_district_distribution(request):
                 Q(procedure_code__contains='SE') & (
                     Q(age_years__lt=40) |
                     Q(preauth_initiated_time__lt=8) |
-                    Q(preauth_initiated_time__gte=18)
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
                 ),
                 then=Value(True)
             ),
@@ -4087,6 +4129,7 @@ def high_alert_demographics(request, type):
     if districts:
         base_query = base_query.filter(district_name__in=districts)
 
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Apply high alert criteria annotations
     annotated = base_query.annotate(
         is_watchlist=Value(True, output_field=BooleanField()),
@@ -4151,7 +4194,8 @@ def high_alert_demographics(request, type):
                 Q(procedure_code__contains='SE') & (
                     Q(age_years__lt=40) |
                     Q(preauth_initiated_time__lt=8) |
-                    Q(preauth_initiated_time__gte=18)
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
                 ),
                 then=Value(True)
             ),
@@ -4211,6 +4255,138 @@ def high_alert_demographics(request, type):
             'data': [result[cat] for cat in categories],
             'colors': colors
         })
+    
+def high_alerts_geo(request):
+    """
+    Returns district-wise high alert counts mapped to FID for ArcGIS map.
+    """
+    sd = request.GET.get('start_date')
+    ed = request.GET.get('end_date')
+    try:
+        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
+    except (ValueError, TypeError):
+        start_date = date.today()
+    try:
+        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
+    except (ValueError, TypeError):
+        end_date = date.today()
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # Reuse same filtering as high_alert view
+    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+    base_query = Last24Hour.objects.filter(
+        Q(hospital_id__in=suspicious_hospitals) &
+        Q(hospital_type='P') &
+        (
+            Q(preauth_initiated_date__date__gte=start_date) & Q(preauth_initiated_date__date__lte=end_date) |
+            Q(admission_date__date__gte=start_date) & Q(admission_date__date__lte=end_date)
+        )
+    )
+    if districts:
+        base_query = base_query.filter(district_name__in=districts)
+
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
+    # Apply full high alert criteria annotations
+    annotated = base_query.annotate(
+        is_watchlist=Value(True, output_field=BooleanField()),
+        is_high_value=Case(
+            When(
+                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
+                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_hospital_bed=Case(
+            When(
+                Exists(
+                    HospitalBeds.objects.filter(
+                        hospital_id=OuterRef('hospital_id')
+                    ).annotate(
+                        admissions=Count(
+                            'id',
+                            filter=Exists(
+                                Last24Hour.objects.filter(
+                                    hospital_id=OuterRef('hospital_id'),
+                                    admission_date__date__gte=start_date,
+                                    admission_date__date__lte=end_date
+                                )
+                            )
+                        )
+                    ).filter(admissions__gt=F('bed_strength'))
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_family_case=Case(
+            When(
+                Exists(
+                    Last24Hour.objects.filter(
+                        family_id=OuterRef('family_id'),
+                        preauth_initiated_date__date__gte=start_date,
+                        preauth_initiated_date__date__lte=end_date
+                    ).values('family_id').annotate(
+                        count=Count('id')
+                    ).filter(count__gt=1)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_geo_anomaly=Case(
+            When(
+                ~Q(state_name=F('hospital_state_name')),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        is_ophtha_case=Case(
+            When(
+                Q(procedure_code__contains='SE') & (
+                    Q(age_years__lt=40) |
+                    Q(preauth_initiated_time__lt=8) |
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
+                ),
+                then=Value(True)
+            ),
+            default=Value(False),
+            output_field=BooleanField()
+        ),
+        total_flags=(
+            Cast('is_watchlist', IntegerField()) +
+            Cast('is_high_value', IntegerField()) +
+            Cast('is_hospital_bed', IntegerField()) +
+            Cast('is_family_case', IntegerField()) +
+            Cast('is_geo_anomaly', IntegerField()) +
+            Cast('is_ophtha_case', IntegerField())
+        )
+    ).filter(total_flags__gte=2)
+
+    # Aggregate by district
+    result = annotated.values('district_name').annotate(
+        case_count=Count('id')
+    ).order_by('-case_count')
+
+    geo_data = []
+    for row in result:
+        district_name = row['district_name']
+        cnt = row['case_count']
+        fid = SHAPEFILE_DISTRICT_MAPPING.get((district_name or '').lower())
+        if fid is not None:
+            geo_data.append({'fid': fid, 'count': cnt})
+    # After building geo_data
+    for name, fid in SHAPEFILE_DISTRICT_MAPPING.items():
+        if not any(d['fid'] == fid for d in geo_data):
+            geo_data.append({'fid': fid, 'count': 0})
+
+    return JsonResponse(geo_data, safe=False)
 
 def download_high_alerts_excel(request):
     sd = request.GET.get('start_date')
@@ -4237,6 +4413,7 @@ def download_high_alerts_excel(request):
     if districts:
         base_query = base_query.filter(district_name__in=districts)
 
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Annotate cases with same logic as high_alert view
     annotated_cases = base_query.annotate(
         # Renamed annotations to avoid field conflicts
@@ -4302,7 +4479,8 @@ def download_high_alerts_excel(request):
                 Q(procedure_code__contains='SE') & (
                     Q(age_years__lt=40) |
                     Q(preauth_initiated_time__lt=8) |
-                    Q(preauth_initiated_time__gte=18)
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
                 ),
                 then=Value(True)
             ),
@@ -4431,6 +4609,7 @@ def download_high_alert_report(request):
     district_b64 = strip_prefix(request.POST.get('district_chart', ''))
     age_b64 = strip_prefix(request.POST.get('age_chart', ''))
     gender_b64 = strip_prefix(request.POST.get('gender_chart', ''))
+    map_b64 = strip_prefix(request.POST.get('map_image', ''))
     
     # Fetch all high alert cases
     base_query = Last24Hour.objects.filter(
@@ -4442,6 +4621,7 @@ def download_high_alert_report(request):
     if districts:
         base_query = base_query.filter(district_name__in=districts)
     
+    flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Annotate and filter
     cases = base_query.annotate(
         # Renamed annotations to avoid field conflicts
@@ -4507,7 +4687,8 @@ def download_high_alert_report(request):
                 Q(procedure_code__contains='SE') & (
                     Q(age_years__lt=40) |
                     Q(preauth_initiated_time__lt=8) |
-                    Q(preauth_initiated_time__gte=18)
+                    Q(preauth_initiated_time__gte=18) |
+                    Q(id__in=flagged_ot_ids)
                 ),
                 then=Value(True)
             ),
@@ -4557,6 +4738,7 @@ def download_high_alert_report(request):
         'district_b64': district_b64,
         'age_b64': age_b64,
         'gender_b64': gender_b64,
+        'map_b64': map_b64,
         'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     
