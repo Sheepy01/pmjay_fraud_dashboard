@@ -408,22 +408,18 @@ def get_ot_overflow_hospital_ids(start_date, end_date, districts=None):
             flagged_ot_ids.update([c['id'] for c in cases[cap:]])
     return flagged_ot_ids
 
-def get_flagged_claims(request):
-    # 1. parse district
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
+def parse_date(startDate, endDate):
+    try:
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+    except ValueError:
+        start_date = timezone.localdate()
+    try:
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+    except ValueError:
+        end_date = timezone.localdate()
+    return start_date, end_date
 
-    # 2. parse dates
-    startDate = request.GET.get('start_date')
-    endDate = request.GET.get('end_date')
-    if startDate and endDate:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
-        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
-
-    # 3. build base queryset over the date range
+def patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts):
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     base_qs = Last24Hour.objects.filter(
         hospital_id__in=suspicious_hospitals,
@@ -433,6 +429,21 @@ def get_flagged_claims(request):
     )
     if districts:
         base_qs = base_qs.filter(district_name__in=districts)
+
+    return base_qs, suspicious_hospitals
+
+def get_flagged_claims(request):
+    # 1. parse district
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+
+    # 2. parse dates
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
+    # 3. build base queryset over the date range
+    base_qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # 4. counts
     total = base_qs.count()
@@ -463,25 +474,10 @@ def get_flagged_claims_details(request):
     # 1. Parse start_date / end_date from GET
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 2. Base queryset over the date range
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    qs = Last24Hour.objects.filter(
-        hospital_id__in=suspicious_hospitals,
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-    )
-    if districts:
-        qs = qs.filter(district_name__in=districts)
+    qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # 3. Pagination
     paginator = Paginator(qs.order_by('preauth_initiated_date'), page_size)
@@ -521,26 +517,11 @@ def get_flagged_claims_by_district(request):
     districts = district_param.split(',') if district_param else []
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+
+    start_date, end_date = parse_date(startDate, endDate)
     
     # Base queryset with today's filter
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date  # Added today filter
-    )
-    
-    if districts:
-        queryset = queryset.filter(district_name__in=districts)
+    queryset, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
     
     # Aggregate data by district
     district_data = queryset.values('district_name').annotate(
@@ -555,37 +536,37 @@ def get_flagged_claims_by_district(request):
     
     return JsonResponse(data)
 
-def get_all_flagged_claims(request):
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
+# def get_all_flagged_claims(request):
+#     district_param = request.GET.get('district', '')
+#     districts = district_param.split(',') if district_param else []
     
-    # Get current date filter
-    today = date(2025, 2, 5)
+#     # Get current date filter
+#     today = date(2025, 2, 5)
     
-    # Base query with today's filter
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    flagged_cases = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P') &
-        Q(preauth_initiated_date__date=today)  # Added today filter
-    )
+#     # Base query with today's filter
+#     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
+#     flagged_cases = Last24Hour.objects.filter(
+#         Q(hospital_id__in=suspicious_hospitals) &
+#         Q(hospital_type='P') &
+#         Q(preauth_initiated_date__date=today)  # Added today filter
+#     )
     
-    if districts:
-        flagged_cases = flagged_cases.filter(district_name__in=districts)
+#     if districts:
+#         flagged_cases = flagged_cases.filter(district_name__in=districts)
     
-    data = []
-    for idx, case in enumerate(flagged_cases.order_by('preauth_initiated_date'), 1):
-        data.append({
-            'serial_no': idx,
-            'claim_id': case.registration_id or case.case_id or 'N/A',
-            'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'hospital_name': case.hospital_name or 'N/A',
-            'district_name': case.district_name or 'N/A',
-            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
-            'reason': 'Suspicious hospital'
-        })
+#     data = []
+#     for idx, case in enumerate(flagged_cases.order_by('preauth_initiated_date'), 1):
+#         data.append({
+#             'serial_no': idx,
+#             'claim_id': case.registration_id or case.case_id or 'N/A',
+#             'patient_name': case.patient_name or f"Patient {case.member_id}",
+#             'hospital_name': case.hospital_name or 'N/A',
+#             'district_name': case.district_name or 'N/A',
+#             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
+#             'reason': 'Suspicious hospital'
+#         })
     
-    return JsonResponse({'data': data})
+#     return JsonResponse({'data': data})
 
 def get_age_distribution(request):
     district_param = request.GET.get('district', '')
@@ -593,24 +574,9 @@ def get_age_distribution(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
 
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,  # Added today filter
-        preauth_initiated_date__date__lte=end_date  # Added today filter
-    )
-
-    if districts:
-        queryset = queryset.filter(district_name__in=districts)
+    queryset, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # Age groups aggregation
     age_groups = {
@@ -634,24 +600,9 @@ def get_gender_distribution(request):
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
 
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
-    queryset = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date, # Added today filter
-        preauth_initiated_date__date__lte=end_date, # Added today filter
-    )
-
-    if districts:
-        queryset = queryset.filter(district_name__in=districts)
+    queryset, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # Gender processing
     gender_data = queryset.values('gender').annotate(
@@ -730,23 +681,12 @@ def get_flagged_claims_geo_counts(request):
     # 1) parse filters
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
-    except ValueError:
-        start_date = end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 2) base queryset
-    qs = Last24Hour.objects.filter(
-        hospital_id__in=SuspiciousHospital.objects.values('hospital_id'),
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-    )
-    if districts:
-        qs = qs.filter(district_name__in=districts)
+    qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # 3) aggregate by district_name
     agg = qs.values('district_name').annotate(count=Count('id'))
@@ -766,31 +706,14 @@ def download_flagged_claims_excel(request):
     print("Request GET:", dict(request.GET))
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
     
     # 1. Apply same filters as other endpoints
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
     # 2. Build queryset with today's filter
-    suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    qs = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_hospitals) &
-        Q(hospital_type='P') &
-        Q(preauth_initiated_date__date__gte=start_date) & 
-        Q(preauth_initiated_date__date__lte=end_date)
-    )
-    
-    if districts:
-        qs = qs.filter(district_name__in=districts)
+    qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # 3. Prepare data with required fields only
     rows = [{
@@ -843,15 +766,7 @@ def download_flagged_claims_excel(request):
 def download_flagged_claims_report(request):
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
-
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 1) Read parameters & chart images
     district = request.POST.get('district', '')
@@ -869,15 +784,7 @@ def download_flagged_claims_report(request):
     map_b64 = strip_prefix(request.POST.get('flagged_map', ''))
 
     # 2) Fetch the FULL flagged-claims data (no pagination)
-    suspicious_ids = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-    qs = Last24Hour.objects.filter(
-        Q(hospital_id__in=suspicious_ids) &
-        Q(hospital_type='P') &
-        Q(preauth_initiated_date__date__gte=start_date) &
-        Q(preauth_initiated_date__date__lte=end_date)
-    )
-    if districts:
-        qs = qs.filter(district_name__in=districts)
+    qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     table_rows = []
     for idx, case in enumerate(qs, start=1):
@@ -924,19 +831,7 @@ def download_flagged_claims_report(request):
     response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
     return response
 
-def get_high_value_claims(request):
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
-    startDate = request.GET.get('start_date')
-    endDate = request.GET.get('end_date')
-    if startDate and endDate:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
-        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
-    
-    # Base queryset with today's filter
+def high_value_claims_base_query(start_date, end_date, districts):
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         preauth_initiated_date__date__gte=start_date,  # Added today filter
@@ -945,6 +840,17 @@ def get_high_value_claims(request):
     
     if districts:
         cases = cases.filter(district_name__in=districts)
+    return cases
+
+def get_high_value_claims(request):
+    district_param = request.GET.get('district', '')
+    districts = district_param.split(',') if district_param else []
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+    
+    # Base queryset with today's filter
+    cases = high_value_claims_base_query(start_date, end_date, districts)
 
     # Time thresholds based on today
     yesterday = end_date - timedelta(days=1)
@@ -1006,14 +912,7 @@ def get_high_value_claims_details(request):
     # 1. Parse start_date / end_date from GET
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
@@ -1080,14 +979,7 @@ def get_high_value_claims_by_district(request):
     # 1. Parse start_date / end_date from GET
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
@@ -1133,14 +1025,7 @@ def get_high_value_age_distribution(request):
     # 1. Parse start_date / end_date from GET
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
@@ -1202,14 +1087,7 @@ def get_high_value_gender_distribution(request):
     # 1. Parse start_date / end_date from GET
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
     base_query = Last24Hour.objects.filter(
@@ -1267,13 +1145,9 @@ def get_high_value_claims_geo(request):
     districts = district_param.split(',') if district_param else []
 
     # parse dates
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
-    except ValueError:
-        start_date = end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # base queryset
     qs = Last24Hour.objects.filter(
@@ -1312,12 +1186,7 @@ def get_hospital_bed_cases(request):
 
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    if startDate and endDate:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
-        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
+    start_date, end_date = parse_date(startDate, endDate)
     yesterday = end_date - timedelta(days=1)
     thirty_days_ago = end_date - timedelta(days=30)
 
@@ -1398,14 +1267,7 @@ def get_hospital_bed_details(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     # 1. Load bed strengths
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -1478,14 +1340,7 @@ def hospital_violations_by_district(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     result = (
         Last24Hour.objects
@@ -1514,13 +1369,9 @@ def get_hospital_bed_violations_geo(request):
     districts = district_param.split(',') if district_param else []
 
     # parse dates
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
-    except ValueError:
-        start_date = end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # base queryset
     qs = Last24Hour.objects.filter(
@@ -1552,16 +1403,9 @@ def get_family_id_cases(request):
     districts = district_param.split(',') if district_param else []
 
     # 2) Parse date range from GET, default to today
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else end_date
-    except (ValueError, TypeError):
-        start_date = end_date
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) “Yesterday” and 30‐day window endpoints
     yesterday = end_date - timedelta(days=1)
@@ -1654,14 +1498,7 @@ def get_family_id_cases_details(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
@@ -1723,14 +1560,7 @@ def get_family_violations_by_district(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
@@ -1770,14 +1600,7 @@ def get_family_violations_demographics(request, type):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
@@ -1858,13 +1681,9 @@ def get_family_violations_geo(request):
     districts = district_param.split(',') if district_param else []
 
     # parse dates
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
-    except ValueError:
-        start_date = end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # base queryset
     qs = Last24Hour.objects.filter(
@@ -1906,12 +1725,7 @@ def get_geo_anomalies(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    if startDate and endDate:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date()
-        end_date   = datetime.datetime.strptime(endDate, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
+    start_date, end_date = parse_date(startDate, endDate)
 
     yesterday = end_date - timedelta(days=1)
     thirty_days_ago = end_date - timedelta(days=30)
@@ -1971,14 +1785,7 @@ def get_geo_anomalies_details(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
@@ -2029,14 +1836,7 @@ def get_geo_violations_by_state(request):
     
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
@@ -2065,14 +1865,7 @@ def get_geo_violations_demographics(request, type):
 
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
     
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
@@ -2135,13 +1928,9 @@ def get_geo_violations_geo(request):
     districts = district_param.split(',') if district_param else []
 
     # parse dates
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-        end_date   = datetime.datetime.strptime(ed, '%Y-%m-%d').date()   if ed else timezone.localdate()
-    except ValueError:
-        start_date = end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # base queryset
     qs = Last24Hour.objects.filter(
@@ -2217,15 +2006,10 @@ def get_ophthalmology_cases(request):
     districts = [d.strip() for d in districts.split(',')] if districts else []
 
     # Date range handling
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
     
-    if start_date_str and end_date_str:
-        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
-    else:
-        today = timezone.localdate()
-        start_date = end_date = today
+    start_date, end_date = parse_date(startDate, endDate)
         
     yesterday = end_date - datetime.timedelta(days=1)
     thirty_days_ago = end_date - datetime.timedelta(days=30)
@@ -2332,18 +2116,9 @@ def get_ophthalmology_details(request):
     page_size = int(request.GET.get('page_size', 50))
 
     # 2) Parse start_date / end_date or default to today
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Load the big DataFrame + capacity map
     df, cap_map = load_dataframes()
@@ -2450,17 +2225,9 @@ def get_ophthalmology_distribution(request):
     districts = [d.strip() for d in district_param.split(',')] if district_param else []
 
     # 2) Parse date range or default to today
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-    except (ValueError, TypeError):
-        start_date = timezone.localdate()
-
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
-    except (ValueError, TypeError):
-        end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Load cached DataFrame + capacity map
     df, cap_map = load_dataframes()
@@ -2539,16 +2306,9 @@ def get_ophthalmology_demographics(request, type):
     districts = [d.strip() for d in district_param.split(',')] if district_param else []
 
     # 2) Date range parsing (default to today)
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-    except (ValueError, TypeError):
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
-    except (ValueError, TypeError):
-        end_date = timezone.localdate()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Load cached DF + capacity map
     df, cap_map = load_dataframes()
@@ -2651,16 +2411,9 @@ def get_ophthalmology_violations_geo(request):
     districts = [d.strip() for d in district_param.split(',')] if district_param else []
 
     # 2) Parse date range
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Load your DataFrame + capacity map
     df, cap_map = load_dataframes()
@@ -2725,14 +2478,7 @@ def download_high_value_claims_excel(request):
    
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except ValueError:
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except ValueError:
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 2) base queryset for P-type hospitals
     qs = Last24Hour.objects.filter(
@@ -2822,14 +2568,7 @@ def download_high_value_claims_report(request):
     districts      = [d for d in district_param.split(',') if d]
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 2) Helper for charts
     def strip_b64(key):
@@ -2946,14 +2685,7 @@ def download_hospital_bed_cases_excel(request):
     # 2) date
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except ValueError:
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except ValueError:
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Build bed_strength lookup
     beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
@@ -3031,14 +2763,7 @@ def download_hospital_bed_report(request):
     districts = [d for d in district_param.split(',') if d]
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # strip base64
     hc = request.POST.get('hospital_chart','')
@@ -3113,14 +2838,7 @@ def download_family_id_cases_excel(request):
     # 2) date
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except ValueError:
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except ValueError:
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) build the subquery & base queryset
     subq = (
@@ -3212,14 +2930,7 @@ def download_family_id_cases_report(request):
     districts      = [d for d in district_param.split(',') if d]
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
-    except ValueError:
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = timezone.localdate()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # strip base64 helper
     def strip_b64(key):
@@ -3298,14 +3009,7 @@ def download_geo_anomalies_excel(request):
     # 2) date
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except ValueError:
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else date.today()
-    except ValueError:
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Query exactly as in get_geo_anomalies_details, but no pagination
     qs = Last24Hour.objects.filter(
@@ -3385,14 +3089,7 @@ def download_geo_anomalies_pdf_report(request):
 
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else date.today()
-    except ValueError:
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
-    except ValueError:
-        end_date = date.today()
+    start_date, end_date = parse_date(startDate, endDate)
 
     # helper to strip base64
     def strip_b64(key):
@@ -3473,16 +3170,9 @@ def download_ophthalmology_excel(request):
     district_param = request.GET.get('district', '').strip()
     districts = [d.strip() for d in district_param.split(',')] if district_param else []
 
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # —2— Build capacity map
     cap_map = {
@@ -3687,16 +3377,9 @@ def download_ophthalmology_pdf_report(request):
     districts = [d for d in district_param.split(',') if d]
 
     # —2— Parse date range (POST) or default to today
-    sd = request.POST.get('start_date')
-    ed = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else timezone.localdate()
-    except (ValueError, TypeError):
-        start_date = timezone.localdate()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else timezone.localdate()
-    except (ValueError, TypeError):
-        end_date = timezone.localdate()
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
 
     # —3— Helper to strip out base64 data-URIs
     def strip_b64(key):
@@ -3830,16 +3513,10 @@ def download_ophthalmology_pdf_report(request):
     return resp
 
 def high_alert(request):
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
@@ -3987,16 +3664,10 @@ def high_alert(request):
     })
 
 def high_alert_district_distribution(request):
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
@@ -4104,16 +3775,10 @@ def high_alert_district_distribution(request):
     })
 
 def high_alert_demographics(request, type):
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
@@ -4260,16 +3925,10 @@ def high_alerts_geo(request):
     """
     Returns district-wise high alert counts mapped to FID for ArcGIS map.
     """
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
@@ -4389,16 +4048,10 @@ def high_alerts_geo(request):
     return JsonResponse(geo_data, safe=False)
 
 def download_high_alerts_excel(request):
-    sd = request.GET.get('start_date')
-    ed = request.GET.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.GET.get('start_date')
+    endDate = request.GET.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
+
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
@@ -4591,16 +4244,9 @@ def download_high_alert_report(request):
     district = request.POST.get('district', '')
     districts = district.split(',') if district else []
 
-    sd = request.POST.get('start_date')
-    ed = request.POST.get('end_date')
-    try:
-        start_date = datetime.datetime.strptime(sd, '%Y-%m-%d').date() if sd else date.today()
-    except (ValueError, TypeError):
-        start_date = date.today()
-    try:
-        end_date = datetime.datetime.strptime(ed, '%Y-%m-%d').date() if ed else date.today()
-    except (ValueError, TypeError):
-        end_date = date.today()
+    startDate = request.POST.get('start_date')
+    endDate = request.POST.get('end_date')
+    start_date, end_date = parse_date(startDate, endDate)
     
     # Process chart images
     def strip_prefix(data_url):
