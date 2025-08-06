@@ -63,22 +63,21 @@ def import_data_view(request):
     if request.method == 'POST':
         uploaded_files = request.FILES.getlist('files')
         required_columns = [
-            'Registration Id', 
-            'Preauth Initiated Date',
-            'Preauth Initiated Time',
-            'Hospital Code',
-            'Claim Initiated Amount(Rs.)',
-            'Hospital Type',
-            'Case Type',
-            'State Name',
-            'Age(Years)',
-            'Procedure Code',
-            'District Name',
-            'Patient Name',
-            'Gender',
-            'Hospital Name',
-            'Hospital State Name',
-            'Family Id'
+            'registration_id', 
+            'admission_dt',
+            'hospital_code',
+            'amount_claim_initiated',
+            'hospital_type',
+            'case_type',
+            'patient_state_name',
+            'age',
+            'procedure_code',
+            'patient_district_name',
+            'patient_name',
+            'gender',
+            'hospital_name',
+            'hosp_state_name',
+            'family_id'
         ]
 
         try:
@@ -91,7 +90,7 @@ def import_data_view(request):
                         uploaded_file,
                         sheet_name='Dump',
                         engine='openpyxl',
-                        dtype={'Registration Id': str}
+                        dtype={'registration_id': str}
                     )
                     
                     # Validate and clean data
@@ -831,15 +830,12 @@ def download_flagged_claims_report(request):
     response['Content-Disposition'] = 'attachment; filename="flagged_claims_report.pdf"'
     return response
 
-def high_value_claims_base_query(start_date, end_date, districts):
+def high_value_claims_base_query(start_date, end_date):
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         preauth_initiated_date__date__gte=start_date,  # Added today filter
         preauth_initiated_date__date__lte=end_date,  # Added today filter
     )
-    
-    if districts:
-        cases = cases.filter(district_name__in=districts)
     return cases
 
 def get_high_value_claims(request):
@@ -850,7 +846,10 @@ def get_high_value_claims(request):
     start_date, end_date = parse_date(startDate, endDate)
     
     # Base queryset with today's filter
-    cases = high_value_claims_base_query(start_date, end_date, districts)
+    cases = high_value_claims_base_query(start_date, end_date)
+
+    if districts:
+        cases = cases.filter(district_name__in=districts)
 
     # Time thresholds based on today
     yesterday = end_date - timedelta(days=1)
@@ -915,11 +914,7 @@ def get_high_value_claims_details(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
-    base_query = Last24Hour.objects.filter(
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date,
-    )
+    base_query = high_value_claims_base_query(start_date, end_date)
 
     # Case type filters (preserve original logic)
     case_filters = Q()
@@ -982,11 +977,7 @@ def get_high_value_claims_by_district(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
-    base_query = Last24Hour.objects.filter(
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,  # Added date filter
-        preauth_initiated_date__date__lte=end_date,  # Added date filter
-    )
+    base_query = high_value_claims_base_query(start_date, end_date)
 
     # Apply value thresholds (original logic preserved)
     if case_type == 'SURGICAL':
@@ -1028,11 +1019,7 @@ def get_high_value_age_distribution(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
-    base_query = Last24Hour.objects.filter(
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,  # Added date filter
-        preauth_initiated_date__date__lte=end_date  # Added date filter
-    )
+    base_query = high_value_claims_base_query(start_date, end_date)
 
     # Case type filter (original logic preserved)
     if case_type == 'SURGICAL':
@@ -1090,11 +1077,7 @@ def get_high_value_gender_distribution(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # Base query with today's filter
-    base_query = Last24Hour.objects.filter(
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-    )
+    base_query = high_value_claims_base_query(start_date, end_date)
 
     # Case type filter (original logic preserved)
     if case_type == 'SURGICAL':
@@ -1150,11 +1133,7 @@ def get_high_value_claims_geo(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # base queryset
-    qs = Last24Hour.objects.filter(
-        hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-    )
+    qs = high_value_claims_base_query(start_date, end_date)
     # thresholds
     if case_type == 'SURGICAL':
         qs = qs.filter(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
@@ -1180,6 +1159,11 @@ def get_high_value_claims_geo(request):
 
     return JsonResponse(result, safe=False)
 
+def hospital_bed_cases_base_query():
+    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
+    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    return bed_strengths
+
 def get_hospital_bed_cases(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -1191,8 +1175,7 @@ def get_hospital_bed_cases(request):
     thirty_days_ago = end_date - timedelta(days=30)
 
     # 1. Load bed strengths
-    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
-    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    bed_strengths = hospital_bed_cases_base_query()
     hospital_ids = list(bed_strengths.keys())
 
     # 2. Helper to fetch admissions per hospital/date
@@ -1270,8 +1253,7 @@ def get_hospital_bed_details(request):
     start_date, end_date = parse_date(startDate, endDate)
     
     # 1. Load bed strengths
-    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
-    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    bed_strengths = hospital_bed_cases_base_query()
     
     # 2. Get today's admissions with hospital details
     violations = (
@@ -1500,7 +1482,7 @@ def get_family_id_cases_details(request):
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
     
-    # Subquery: Get family_ids with more than 2 cases today
+    # Subquery: Get family_ids with more than 1 cases 
     suspicious_families = Last24Hour.objects.annotate(
         day=TruncDate('preauth_initiated_date')
     ).filter(
@@ -2481,11 +2463,7 @@ def download_high_value_claims_excel(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # 2) base queryset for P-type hospitals
-    qs = Last24Hour.objects.filter(
-        hospital_type='P', 
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-        )
+    qs = high_value_claims_base_query(start_date, end_date)
     if districts:
         qs = qs.filter(district_name__in=districts)
 
@@ -2592,11 +2570,7 @@ def download_high_value_claims_report(request):
     medical_gen_callouts  = request.POST.get('medical_gender_callouts','')
 
     # 3) Build querysets based on case_type
-    base_qs = Last24Hour.objects.filter(
-        hospital_type='P', 
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-        )
+    base_qs = high_value_claims_base_query(start_date, end_date)
     surgical_qs = base_qs.none()
     medical_qs  = base_qs.none()
 
@@ -2688,8 +2662,7 @@ def download_hospital_bed_cases_excel(request):
     start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Build bed_strength lookup
-    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
-    bed_strengths = {b['hospital_id']: b['bed_strength'] for b in beds}
+    bed_strengths = hospital_bed_cases_base_query()
 
     # 4) Query today's admissions + last_violation_date
     qs = (
