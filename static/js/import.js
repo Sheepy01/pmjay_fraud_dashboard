@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleFiles(newFiles) {
         files = [...files, ...Array.from(newFiles).filter(file => 
-            file.name.match(/\.xlsx?$/i) && 
+            file.name.match(/\.(xlsx?|csv)$/i) && 
             !files.some(f => f.name === file.name)
         )];
         
@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileList = document.getElementById('fileList');
         fileList.innerHTML = files.map((file, index) => `
             <div class="file-item">
-                <i class="fas fa-file-excel"></i>
+                <i class="fas ${file.name.match(/\.csv$/i) ? 'fa-file-csv' : 'fa-file-excel'}"></i>
                 <div class="file-info">
                     <div>${file.name}</div>
                     <div class="file-size">${(file.size/1024/1024).toFixed(2)} MB</div>

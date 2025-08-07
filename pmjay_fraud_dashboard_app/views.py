@@ -62,6 +62,7 @@ class Upper(Func):
 def import_data_view(request):
     if request.method == 'POST':
         uploaded_files = request.FILES.getlist('files')
+        # print("Uploaded Files: ", uploaded_files)
         required_columns = [
             'registration_id', 
             'admission_dt',
@@ -82,120 +83,75 @@ def import_data_view(request):
 
         try:
             new_records = 0
-            updated_records = 0
-            
             for uploaded_file in uploaded_files:
                 try:
-                    df = pd.read_excel(
-                        uploaded_file,
-                        sheet_name='Dump',
-                        engine='openpyxl',
-                        dtype={'registration_id': str}
-                    )
-                    
-                    # Validate and clean data
+                    # Detect file type
+                    if uploaded_file.name.lower().endswith('.csv'):
+                        df = pd.read_csv(uploaded_file, dtype=str)
+                    else:
+                        df = pd.read_excel(uploaded_file, dtype=str)
+                    # print(df.columns.tolist())
                     df.columns = df.columns.str.strip()
                     missing_cols = [col for col in required_columns if col not in df.columns]
                     if missing_cols:
                         messages.error(request, f"Skipped {uploaded_file.name}: Missing columns {', '.join(missing_cols)}")
                         continue
 
-                    # Convert date and time
-                    df['preauth_date'] = pd.to_datetime(
-                        df['Preauth Initiated Date'],
-                        dayfirst=True,  # Prioritize DD-MM-YYYY format
-                        errors='coerce'
-                    ).dt.date
-                    
-                    df['preauth_time'] = pd.to_datetime(
-                        df['Preauth Initiated Time'].astype(str).str.replace(r'\s+[AP]M$', '', regex=True),
-                        format='%H:%M:%S',  # Try with seconds first
-                        errors='coerce'
-                    ).dt.time
+                    # Parse admission_dt as datetime
+                    df['admission_dt'] = pd.to_datetime(df['admission_dt'], errors='coerce')
 
-                    # Fallback for times without seconds
-                    if df['preauth_time'].isna().any():
-                        df['preauth_time'] = pd.to_datetime(
-                            df['Preauth Initiated Time'].astype(str).str.replace(r'\s+[AP]M$', '', regex=True),
-                            format='%H:%M',
-                            errors='coerce'
-                        ).dt.time
-                    
-                    df['Registration Id'] = (
-                        df['Registration Id']
-                        .astype(str)
-                        .str.strip()
-                        .replace({'nan': None, 'None': None, '': None})
-                    )
+                    # Drop rows with missing required fields
+                    valid_df = df.dropna(subset=['registration_id', 'admission_dt'])
 
-                    # Show problematic rows
-                    invalid_rows = df[
-                        df['preauth_date'].isna() |
-                        df['preauth_time'].isna() |
-                        df['Registration Id'].isna()
-                    ]
-
-                    # Filter valid records
-                    valid_df = df.dropna(subset=[
-                        'preauth_date', 
-                        'preauth_time', 
-                        'Registration Id'
-                    ])
-                    
-                    # Create model instances
+                    # Prepare model instances
                     instances = []
                     for _, row in valid_df.iterrows():
                         instances.append(Last24Hour(
-                            registration_id=str(row['Registration Id']).strip(),
-                            preauth_initiated_date=row['preauth_date'],
-                            preauth_initiated_time=row['preauth_time'],
-                            hospital_id=str(row['Hospital Code']).strip().upper(),  # Corrected
-                            hospital_type=str(row['Hospital Type']).strip(),
-                            case_type=str(row['Case Type']).strip(),
-                            claim_initiated_amount=row['Claim Initiated Amount(Rs.)'],
-                            state_name=str(row['State Name']).strip(),
-                            age_years=str(row['Age(Years)']).strip(),
-                            procedure_code=str(row['Procedure Code']).strip(),
-                            district_name=str(row['District Name']).strip(),
-                            patient_name=str(row['Patient Name']).strip(),
-                            gender=str(row['Gender']).strip().upper(),
-                            hospital_name=str(row['Hospital Name']).strip().upper(),
-                            hospital_state_name=str(row['Hospital State Name']).strip().upper(),
-                            family_id=str(row['Family Id']).strip(),
+                            registration_id=row.get('registration_id'),
+                            admission_dt=row.get('admission_dt'),
+                            hospital_code=row.get('hospital_code'),
+                            amount_claim_initiated=float(row['amount_claim_initiated']) if pd.notnull(row.get('amount_claim_initiated')) else None,
+                            hospital_type=row.get('hospital_type'),
+                            case_type=row.get('case_type'),
+                            patient_state_name=row.get('patient_state_name'),
+                            age=int(row['age']) if pd.notnull(row.get('age')) else None,
+                            procedure_code=row.get('procedure_code'),
+                            patient_district_name=row.get('patient_district_name'),
+                            patient_name=row.get('patient_name'),
+                            gender=row.get('gender'),
+                            hospital_name=row.get('hospital_name'),
+                            hosp_state_name=row.get('hosp_state_name'),
+                            family_id=row.get('family_id'),
                         ))
+                    # print(instances)
 
-                    # Bulk create with conflict handling
-                    result = Last24Hour.objects.bulk_create(
+                    Last24Hour.objects.bulk_create(
                         instances,
                         update_conflicts=True,
-                        unique_fields=['registration_id', 'preauth_initiated_date', 'preauth_initiated_time'],
+                        unique_fields=['registration_id', 'admission_dt'],
                         update_fields=[
-                            'hospital_id',  # Not hospital_code
+                            'hospital_code',
+                            'amount_claim_initiated',
                             'hospital_type',
                             'case_type',
-                            'claim_initiated_amount',
-                            'state_name',
-                            'age_years',
+                            'patient_state_name',
+                            'age',
                             'procedure_code',
-                            'district_name',
+                            'patient_district_name',
                             'patient_name',
                             'gender',
                             'hospital_name',
-                            'hospital_state_name',
+                            'hosp_state_name',
                             'family_id'
-                        ])
-                    
-                    new_records += len(result)
-                    updated_records += len(instances) - len(result)
-
+                        ]
+                    )
+                    new_records += len(instances)
+                    # print(new_records)
                 except Exception as e:
                     messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
                     continue
 
-            messages.success(request, 
-                f"Processed {new_records} new and {updated_records} updated records"
-            )
-            
+            messages.success(request, f"Imported {new_records} new records.")
         except Exception as e:
             messages.error(request, f"System error: {str(e)}")
 
@@ -374,7 +330,7 @@ def get_management_data(request):
     return HttpResponse(html)
 
 def get_districts(request):
-    districts = Last24Hour.objects.values_list('district_name', flat=True).distinct()
+    districts = Last24Hour.objects.values_list('patient_district_name', flat=True).distinct()
     district_list = [d for d in districts if d]  # Remove None/empty values
     return JsonResponse({'districts': district_list})
 
@@ -390,7 +346,7 @@ def get_ot_overflow_hospital_ids(start_date, end_date, districts=None):
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
     # Fetch all relevant cases at once
     all_cases = list(qs.values('id', 'hospital_id', 'preauth_initiated_date', 'preauth_initiated_time'))
     from collections import defaultdict
@@ -427,7 +383,7 @@ def patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, dist
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        base_qs = base_qs.filter(district_name__in=districts)
+        base_qs = base_qs.filter(patient_district_name__in=districts)
 
     return base_qs, suspicious_hospitals
 
@@ -456,7 +412,7 @@ def get_flagged_claims(request):
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        last_30_days = last_30_days.filter(district_name__in=districts)
+        last_30_days = last_30_days.filter(patient_district_name__in=districts)
 
     return JsonResponse({
         'total': total,
@@ -489,7 +445,7 @@ def get_flagged_claims_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'district_name': case.district_name or 'N/A',
+            'patient_district_name': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') 
                                       if case.preauth_initiated_date else 'N/A',
             'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
@@ -523,13 +479,13 @@ def get_flagged_claims_by_district(request):
     queryset, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
     
     # Aggregate data by district
-    district_data = queryset.values('district_name').annotate(
+    district_data = queryset.values('patient_district_name').annotate(
         count=Count('id')
     ).order_by('-count')
     
     # Prepare response data
     data = {
-        'districts': [item['district_name'] or 'Unknown' for item in district_data],
+        'districts': [item['patient_district_name'] or 'Unknown' for item in district_data],
         'counts': [item['count'] for item in district_data]
     }
     
@@ -551,7 +507,7 @@ def get_flagged_claims_by_district(request):
 #     )
     
 #     if districts:
-#         flagged_cases = flagged_cases.filter(district_name__in=districts)
+#         flagged_cases = flagged_cases.filter(patient_district_name__in=districts)
     
 #     data = []
 #     for idx, case in enumerate(flagged_cases.order_by('preauth_initiated_date'), 1):
@@ -560,7 +516,7 @@ def get_flagged_claims_by_district(request):
 #             'claim_id': case.registration_id or case.case_id or 'N/A',
 #             'patient_name': case.patient_name or f"Patient {case.member_id}",
 #             'hospital_name': case.hospital_name or 'N/A',
-#             'district_name': case.district_name or 'N/A',
+#             'patient_district_name': case.patient_district_name or 'N/A',
 #             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
 #             'reason': 'Suspicious hospital'
 #         })
@@ -687,13 +643,13 @@ def get_flagged_claims_geo_counts(request):
     # 2) base queryset
     qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
-    # 3) aggregate by district_name
-    agg = qs.values('district_name').annotate(count=Count('id'))
+    # 3) aggregate by patient_district_name
+    agg = qs.values('patient_district_name').annotate(count=Count('id'))
 
     # 4) map back to FID
     result = []
     for row in agg:
-        name  = row['district_name']
+        name  = row['patient_district_name']
         cnt   = row['count']
         fid   = SHAPEFILE_DISTRICT_MAPPING.get(name.lower())
         if fid is not None:
@@ -718,7 +674,7 @@ def download_flagged_claims_excel(request):
     rows = [{
         'Claim ID': case.registration_id or case.case_id,
         'Patient Name': case.patient_name or f"Patient {case.member_id}",
-        'District': case.district_name,
+        'District': case.patient_district_name,
         'Preauth Initiated Date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
         'Preauth Initiated Time': case.preauth_initiated_time,
         'Hospital ID': case.hospital_id,
@@ -727,7 +683,7 @@ def download_flagged_claims_excel(request):
         'Reason': 'Suspicious hospital',
         'Date': case.preauth_initiated_date.strftime('%Y-%m-%d')
     } for case in qs.only(
-        'registration_id', 'case_id', 'patient_name', 'member_id', 'district_name', 'preauth_initiated_date', 'preauth_initiated_time', 'hospital_id', 'hospital_name', 'claim_initiated_amount', 'preauth_initiated_date'
+        'registration_id', 'case_id', 'patient_name', 'member_id', 'patient_district_name', 'preauth_initiated_date', 'preauth_initiated_time', 'hospital_id', 'hospital_name', 'claim_initiated_amount', 'preauth_initiated_date'
     )]
 
     # 4. Create DataFrame with defined column order
@@ -791,7 +747,7 @@ def download_flagged_claims_report(request):
             'serial_no':     idx,
             'claim_id':      case.registration_id or case.case_id or 'N/A',
             'patient_name':  case.patient_name or f"Patient {case.member_id}",
-            'district_name': case.district_name or 'N/A',
+            'patient_district_name': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': case.preauth_initiated_time,
             'hospital_id': case.hospital_id or 'N/A',
@@ -800,9 +756,9 @@ def download_flagged_claims_report(request):
             'reason':        'Suspicious hospital'
         })
     report_districts = sorted({
-        row['district_name'] 
+        row['patient_district_name'] 
         for row in table_rows 
-        if row['district_name'] and row['district_name'] != 'N/A'
+        if row['patient_district_name'] and row['patient_district_name'] != 'N/A'
     })
 
     # 3) Render HTML via a dedicated template
@@ -849,7 +805,7 @@ def get_high_value_claims(request):
     cases = high_value_claims_base_query(start_date, end_date)
 
     if districts:
-        cases = cases.filter(district_name__in=districts)
+        cases = cases.filter(patient_district_name__in=districts)
 
     # Time thresholds based on today
     yesterday = end_date - timedelta(days=1)
@@ -933,7 +889,7 @@ def get_high_value_claims_details(request):
     # District filtering
     if district_param:
         districts = district_param.split(',')
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     # Pagination with ordering
     paginator = Paginator(base_query.order_by('-claim_initiated_amount'), page_size)
@@ -946,7 +902,7 @@ def get_high_value_claims_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'district_name': case.district_name or 'N/A',
+            'patient_district_name': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': case.preauth_initiated_time,
             'hospital_id': case.hospital_id or 'N/A',
@@ -997,15 +953,15 @@ def get_high_value_claims_by_district(request):
         )
 
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     # Aggregate district data
-    district_data = base_query.values('district_name').annotate(
+    district_data = base_query.values('patient_district_name').annotate(
         count=Count('id')
     ).order_by('-count')
 
     return JsonResponse({
-        'districts': [d['district_name'] or 'Unknown' for d in district_data],
+        'districts': [d['patient_district_name'] or 'Unknown' for d in district_data],
         'counts': [d['count'] for d in district_data]
     })
 
@@ -1039,7 +995,7 @@ def get_high_value_age_distribution(request):
         )
 
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     # [Rest of the age grouping logic remains unchanged]
     age_groups = Case(
@@ -1097,7 +1053,7 @@ def get_high_value_gender_distribution(request):
         )
 
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     # [Rest of the gender grouping logic remains unchanged]
     gender_groups = Case(
@@ -1145,15 +1101,15 @@ def get_high_value_claims_geo(request):
             Q(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
         )
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
-    # aggregate by district_name
-    agg = qs.values('district_name').annotate(count=Count('id'))
+    # aggregate by patient_district_name
+    agg = qs.values('patient_district_name').annotate(count=Count('id'))
 
     # map to FID
     result = []
     for row in agg:
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['patient_district_name'].lower())
         if fid is not None:
             result.append({'fid': fid, 'count': row['count']})
 
@@ -1265,7 +1221,7 @@ def get_hospital_bed_details(request):
             Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
             Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
-        .values('hospital_id', 'hospital_name', 'district_name', 'state_name')
+        .values('hospital_id', 'hospital_name', 'patient_district_name', 'state_name')
         .annotate(
             admissions=Count('id'),
             last_violation_date=Max('admission_date')
@@ -1273,7 +1229,7 @@ def get_hospital_bed_details(request):
     )
     
     if districts:
-        violations = violations.filter(district_name__in=districts)
+        violations = violations.filter(patient_district_name__in=districts)
     
     # 3. Add bed capacity and filter violations
     enhanced_violations = []
@@ -1297,7 +1253,7 @@ def get_hospital_bed_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'hospital_id': violation['hospital_id'],
             'hospital_name': violation['hospital_name'],
-            'district': violation['district_name'],
+            'district': violation['patient_district_name'],
             'state': violation['state_name'],
             'bed_capacity': violation['bed_capacity'],
             'admissions': violation['admissions'],
@@ -1333,16 +1289,16 @@ def hospital_violations_by_district(request):
             Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
             Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
-        .values('district_name')
+        .values('patient_district_name')
         .annotate(violation_count=Count('hospital_id', distinct=True))
         .order_by('-violation_count')
     )
     
     if districts:
-        result = result.filter(district_name__in=districts)
+        result = result.filter(patient_district_name__in=districts)
     
     return JsonResponse({
-        'districts': [item['district_name'] or 'Unknown' for item in result],
+        'districts': [item['patient_district_name'] or 'Unknown' for item in result],
         'counts': [item['violation_count'] for item in result]
     })
 
@@ -1365,15 +1321,15 @@ def get_hospital_bed_violations_geo(request):
     )
     
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
-    # aggregate by district_name
-    agg = qs.values('district_name').annotate(count=Count('hospital_id', distinct=True))
+    # aggregate by patient_district_name
+    agg = qs.values('patient_district_name').annotate(count=Count('hospital_id', distinct=True))
 
     # map to FID
     result = []
     for row in agg:
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['patient_district_name'].lower())
         if fid is not None:
             result.append({'fid': fid, 'count': row['count']})
 
@@ -1400,7 +1356,7 @@ def get_family_id_cases(request):
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        base_qs = base_qs.filter(district_name__in=districts)
+        base_qs = base_qs.filter(patient_district_name__in=districts)
 
     # 5) Find families with >1 claim *per day* in that window
     suspicious_families = (
@@ -1420,7 +1376,7 @@ def get_family_id_cases(request):
         preauth_initiated_date__date=yesterday
     )
     if districts:
-        yest_qs = yest_qs.filter(district_name__in=districts)
+        yest_qs = yest_qs.filter(patient_district_name__in=districts)
 
     yest_families = (
         yest_qs
@@ -1440,7 +1396,7 @@ def get_family_id_cases(request):
         family_id__in=violating_family_ids
     )
     if districts:
-        thr_qs = thr_qs.filter(district_name__in=districts)
+        thr_qs = thr_qs.filter(patient_district_name__in=districts)
 
     violations_last_30_days = thr_qs.values('family_id').distinct().count()
 
@@ -1502,7 +1458,7 @@ def get_family_id_cases_details(request):
     ).order_by('family_id', 'preauth_initiated_date')
     
     if districts:
-        cases = cases.filter(district_name__in=districts)
+        cases = cases.filter(patient_district_name__in=districts)
     
     # Pagination
     paginator = Paginator(cases, page_size)
@@ -1516,7 +1472,7 @@ def get_family_id_cases_details(request):
             'family_id': case.family_id,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'district_name': case.district_name or 'N/A',
+            'patient_district_name': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': case.preauth_initiated_time,
             'hospital_id': case.hospital_id or 'N/A',
@@ -1564,14 +1520,14 @@ def get_family_violations_by_district(request):
     )
     
     if districts:
-        result = result.filter(district_name__in=districts)
+        result = result.filter(patient_district_name__in=districts)
     
-    result = result.values('district_name').annotate(
+    result = result.values('patient_district_name').annotate(
         family_count=Count('family_id', distinct=True)
     ).order_by('-family_count')
     
     return JsonResponse({
-        'districts': [item['district_name'] for item in result],
+        'districts': [item['patient_district_name'] for item in result],
         'counts': [item['family_count'] for item in result]
     })
 
@@ -1604,7 +1560,7 @@ def get_family_violations_demographics(request, type):
     )
     
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
     
     if type == 'age':
         age_groups = Case(
@@ -1688,14 +1644,14 @@ def get_family_violations_geo(request):
     qs = qs.filter(family_id__in=Subquery(suspicious_families))
 
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
-    # aggregate by district_name
-    agg = qs.values('district_name').annotate(count=Count('family_id', distinct=True))
+    # aggregate by patient_district_name
+    agg = qs.values('patient_district_name').annotate(count=Count('family_id', distinct=True))
     # map to FID
     result = []
     for row in agg:
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['patient_district_name'].lower())
         if fid is not None:
             result.append({'fid': fid, 'count': row['count']})
 
@@ -1721,7 +1677,7 @@ def get_geo_anomalies(request):
 
     # Apply district filter (patient's district)
     if districts:
-        anomalies = anomalies.filter(district_name__in=districts)
+        anomalies = anomalies.filter(patient_district_name__in=districts)
 
     # Today's count
     today_anomalies = anomalies.filter(
@@ -1781,7 +1737,7 @@ def get_geo_anomalies_details(request):
     ).order_by('state_name', 'hospital_state_name')
     
     if districts:
-        cases = cases.filter(district_name__in=districts)
+        cases = cases.filter(patient_district_name__in=districts)
 
     paginator = Paginator(cases, page_size)
     page_obj = paginator.get_page(page)
@@ -1792,7 +1748,7 @@ def get_geo_anomalies_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'district_name': case.district_name or 'N/A',
+            'patient_district_name': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.date() or 'N/A',
             'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
             'hospital_id': case.hospital_id or 'N/A',
@@ -1832,7 +1788,7 @@ def get_geo_violations_by_state(request):
     )
     
     if districts:
-        cases = cases.filter(district_name__in=districts)
+        cases = cases.filter(patient_district_name__in=districts)
 
     result = cases.values('state_name').annotate(count=Count('id')).order_by('-count')
     
@@ -1861,7 +1817,7 @@ def get_geo_violations_demographics(request, type):
     ).order_by('state_name', 'hospital_state_name')
     
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     if type == 'age':
         age_groups = Case(
@@ -1927,15 +1883,15 @@ def get_geo_violations_geo(request):
     )
 
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     # aggregate by state_name
-    agg = qs.values('district_name').annotate(count=Count('id', distinct=True))
+    agg = qs.values('patient_district_name').annotate(count=Count('id', distinct=True))
 
     # map to FID
     result = []
     for row in agg:
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['district_name'].lower())
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['patient_district_name'].lower())
         if fid is not None:
             result.append({'fid': fid, 'count': row['count']})
 
@@ -1963,7 +1919,7 @@ def load_dataframes():
             'hospital_type',
             'hospital_code',
             'procedure_code',
-            'district_name',
+            'patient_district_name',
             'age_years',
             'patient_name',
             'gender',
@@ -2011,7 +1967,7 @@ def get_ophthalmology_cases(request):
             (df['preauth_initiated_date'].dt.date <= end_date)
         )
         if districts:
-            mask &= df['district_name'].isin(districts)
+            mask &= df['patient_district_name'].isin(districts)
         return mask
 
     # Create masks for all periods
@@ -2123,7 +2079,7 @@ def get_ophthalmology_details(request):
         df['preauth_initiated_date'].dt.date.le(end_date)
     )
     if districts:
-        mask &= df['district_name'].isin(districts)
+        mask &= df['patient_district_name'].isin(districts)
 
     # 6) Filter & sort by date then time
     df_base = df.loc[mask].copy()
@@ -2179,7 +2135,7 @@ def get_ophthalmology_details(request):
             'patient_name':   row.patient_name or f"Patient {row.member_id}",
             'hospital_id':    row.hospital_id or 'N/A',
             'hospital_name':  row.hospital_name or 'N/A',
-            'district_name':  row.district_name or 'N/A',
+            'patient_district_name':  row.patient_district_name or 'N/A',
             'amount':         getattr(row, 'preauth_initiated_amount', 0) or 0,
             'age':            row.age_years,
             'preauth_time':   row.preauth_initiated_time,
@@ -2231,7 +2187,7 @@ def get_ophthalmology_distribution(request):
         df['preauth_initiated_date'].dt.date.le(end_date)
     )
     if districts:
-        mask &= df['district_name'].isin(districts)
+        mask &= df['patient_district_name'].isin(districts)
 
     df_base = df.loc[mask].copy()
 
@@ -2265,7 +2221,7 @@ def get_ophthalmology_distribution(request):
     df_filtered = df_base.loc[vio_mask]
 
     # 8) Aggregate by district
-    dist_series = df_filtered['district_name'].fillna('Unknown')
+    dist_series = df_filtered['patient_district_name'].fillna('Unknown')
     # ensure string dtype
     if dist_series.dtype != object:
         dist_series = dist_series.astype(str)
@@ -2312,7 +2268,7 @@ def get_ophthalmology_demographics(request, type):
         df['preauth_initiated_date'].dt.date.le(end_date)
     )
     if districts:
-        mask &= df['district_name'].isin(districts)
+        mask &= df['patient_district_name'].isin(districts)
 
     df_base = df.loc[mask].copy()
 
@@ -2411,7 +2367,7 @@ def get_ophthalmology_violations_geo(request):
         df['preauth_initiated_date'].dt.date.between(start_date, end_date)
     )
     if districts:
-        mask &= df['district_name'].isin(districts)
+        mask &= df['patient_district_name'].isin(districts)
     df_base = df.loc[mask]
 
     # 6) Compute OT overflows
@@ -2440,13 +2396,13 @@ def get_ophthalmology_violations_geo(request):
 
     df_filtered = df_base.loc[vio_mask]
 
-    # 8) Aggregate by district_name
-    counts = df_filtered['district_name'].fillna('Unknown').value_counts()
+    # 8) Aggregate by patient_district_name
+    counts = df_filtered['patient_district_name'].fillna('Unknown').value_counts()
 
     # 9) Map to FIDs
     result = []
-    for district_name, cnt in counts.items():
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(district_name.lower())
+    for patient_district_name, cnt in counts.items():
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(patient_district_name.lower())
         if fid is not None:
             result.append({'fid': fid, 'count': int(cnt)})
 
@@ -2465,7 +2421,7 @@ def download_high_value_claims_excel(request):
     # 2) base queryset for P-type hospitals
     qs = high_value_claims_base_query(start_date, end_date)
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     # 3) split into surgical & medical
     surgical_qs = qs.filter(
@@ -2485,7 +2441,7 @@ def download_high_value_claims_excel(request):
                 'S.No':          idx,
                 'Claim ID':      c.registration_id or c.case_id or 'N/A',
                 'Patient Name':  c.patient_name or f"Patient {c.member_id}",
-                'District':      c.district_name or 'N/A',
+                'District':      c.patient_district_name or 'N/A',
                 'Preauth Initiated Date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
                 'Preauth Initiated Time': c.preauth_initiated_time,
                 'Hospital ID': c.hospital_id or 'N/A',
@@ -2580,8 +2536,8 @@ def download_high_value_claims_report(request):
         medical_qs  = base_qs.filter(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
 
     if districts:
-        surgical_qs = surgical_qs.filter(district_name__in=districts)
-        medical_qs  = medical_qs.filter(district_name__in=districts)
+        surgical_qs = surgical_qs.filter(patient_district_name__in=districts)
+        medical_qs  = medical_qs.filter(patient_district_name__in=districts)
 
     # 4) Serialize rows
     surgical_rows = [
@@ -2589,7 +2545,7 @@ def download_high_value_claims_report(request):
             'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
-            'district_name': c.district_name or 'N/A',
+            'patient_district_name': c.patient_district_name or 'N/A',
             'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': c.preauth_initiated_time,
             'hospital_id': c.hospital_id or 'N/A',
@@ -2604,12 +2560,12 @@ def download_high_value_claims_report(request):
             'serial_no':     i+1,
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
-            'district_name': c.district_name or 'N/A',
+            'patient_district_name': c.patient_district_name or 'N/A',
             'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': c.preauth_initiated_time,
             'hospital_id': c.hospital_id or 'N/A',
             'hospital_name': c.hospital_name or 'N/A',
-            'district_name': c.district_name or 'N/A',
+            'patient_district_name': c.patient_district_name or 'N/A',
             'amount':        c.claim_initiated_amount or 0,
             'case_type':     'MEDICAL'
         }
@@ -2617,7 +2573,7 @@ def download_high_value_claims_report(request):
     ]
 
     # 5) Compute report_districts as a sorted list
-    combined = [r['district_name'] for r in surgical_rows + medical_rows if r['district_name'] and r['district_name'] != 'N/A']
+    combined = [r['patient_district_name'] for r in surgical_rows + medical_rows if r['patient_district_name'] and r['patient_district_name'] != 'N/A']
     report_districts = sorted(set(combined))
 
     # 6) Render
@@ -2673,14 +2629,14 @@ def download_hospital_bed_cases_excel(request):
             Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
             Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
         )
-        .values('hospital_id','hospital_name','district_name','state_name')
+        .values('hospital_id','hospital_name','patient_district_name','state_name')
         .annotate(
             admissions=Count('id'),
             last_violation_date=Max('admission_date')
         )
     )
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     # 5) Compute “enhanced” where admissions > capacity
     enhanced = []
@@ -2691,7 +2647,7 @@ def download_hospital_bed_cases_excel(request):
                 'S.No':           len(enhanced) + 1,
                 'Hospital ID':    v['hospital_id'],
                 'Hospital Name':  v['hospital_name'],
-                'District':       v['district_name'],
+                'District':       v['patient_district_name'],
                 'State':          v['state_name'],
                 'Bed Capacity':   cap,
                 'Admissions':     v['admissions'],
@@ -2757,14 +2713,14 @@ def download_hospital_bed_report(request):
         Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
         Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
       )
-      .values('hospital_id','hospital_name','district_name','state_name')
+      .values('hospital_id','hospital_name','patient_district_name','state_name')
       .annotate(
         admissions=Count('id'),
         last_violation=Max('admission_date')
       )
     )
     if districts:
-      raw = raw.filter(district_name__in=districts)
+      raw = raw.filter(patient_district_name__in=districts)
 
     rows = []
     for i,v in enumerate(raw, start=1):
@@ -2774,7 +2730,7 @@ def download_hospital_bed_report(request):
           'serial_no':      i,
           'hospital_id':    v['hospital_id'],
           'hospital_name':  v['hospital_name'],
-          'district':       v['district_name'],
+          'district':       v['patient_district_name'],
           'state':          v['state_name'],
           'bed_capacity':   cap,
           'admissions':     v['admissions'],
@@ -2833,7 +2789,7 @@ def download_family_id_cases_excel(request):
         .order_by('family_id', 'preauth_initiated_date')
     )
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     # 4) serialize all rows
     rows = []
@@ -2843,7 +2799,7 @@ def download_family_id_cases_excel(request):
             'Family ID':     case.family_id,
             'Claim ID':      case.registration_id or case.case_id or 'N/A',
             'Patient Name':  case.patient_name or f"Patient {case.member_id}",
-            'District':      case.district_name or 'N/A',
+            'District':      case.patient_district_name or 'N/A',
             'Preauth Initiated Date': case.preauth_initiated_date.date().isoformat() or 'N/A',
             'Preauth Initiated Time': case.preauth_initiated_time or 'N/A',
             'Hospital ID': case.hospital_id or 'N/A',
@@ -2932,7 +2888,7 @@ def download_family_id_cases_report(request):
     ).order_by('family_id','preauth_initiated_date')
 
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     rows = []
     for idx, c in enumerate(qs, start=1):
@@ -2941,7 +2897,7 @@ def download_family_id_cases_report(request):
             'family_id':    c.family_id,
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
-            'district':     c.district_name or 'N/A',
+            'district':     c.patient_district_name or 'N/A',
             'preauth_initiated_date':     c.preauth_initiated_date.date().isoformat() or 'N/A',
             'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
             'hospital_id':     c.hospital_id or 'N/A',
@@ -2999,7 +2955,7 @@ def download_geo_anomalies_excel(request):
     ).order_by('state_name','hospital_state_name')
 
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
 
     # 4) Serialize all rows
     rows = []
@@ -3008,7 +2964,7 @@ def download_geo_anomalies_excel(request):
             'S.No':             idx,
             'Claim ID':         c.registration_id or c.case_id or 'N/A',
             'Patient Name':     c.patient_name or f"Patient {c.member_id}",
-            'District':         c.district_name or 'N/A',
+            'District':         c.patient_district_name or 'N/A',
             'Preauth Initiated Date':         c.preauth_initiated_date.date() or 'N/A',
             'Preauth Initiated Time':         c.preauth_initiated_time or 'N/A',
             'Hospital ID':    c.hospital_id or 'N/A',
@@ -3088,7 +3044,7 @@ def download_geo_anomalies_pdf_report(request):
         Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
     )
     if districts:
-        qs = qs.filter(district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
     qs = qs.order_by('state_name','hospital_state_name')
 
     # 3) Build rows
@@ -3098,7 +3054,7 @@ def download_geo_anomalies_pdf_report(request):
             'serial_no':    i,
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
-            'district':     c.district_name or 'N/A',
+            'district':     c.patient_district_name or 'N/A',
             'preauth_initiated_date':     c.preauth_initiated_date.date() or 'N/A',
             'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
             'hospital_id':c.hospital_id or 'N/A',
@@ -3163,7 +3119,7 @@ def download_ophthalmology_excel(request):
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        base_qs = base_qs.filter(district_name__in=districts)
+        base_qs = base_qs.filter(patient_district_name__in=districts)
 
     # —4— Compute OT-flagged IDs
     flagged_ot_ids = []
@@ -3213,7 +3169,7 @@ def download_ophthalmology_excel(request):
         ('S.No',         lambda c,i: i),
         ('Claim ID',     lambda c,i: c.registration_id or c.case_id or 'N/A'),
         ('Patient Name', lambda c,i: c.patient_name or f"Patient {c.member_id}"),
-        ('District',     lambda c,i: c.district_name or 'N/A'),
+        ('District',     lambda c,i: c.patient_district_name or 'N/A'),
         ('Hospital ID',  lambda c,i: c.hospital_id or 'N/A'),
         ('Hospital Name',lambda c,i: c.hospital_name or 'N/A'),
         ('Amount',       lambda c,i: getattr(c,'preauth_initiated_amount',0) or 0),
@@ -3388,7 +3344,7 @@ def download_ophthalmology_pdf_report(request):
         preauth_initiated_date__date__lte=end_date
     )
     if districts:
-        base_qs = base_qs.filter(district_name__in=districts)
+        base_qs = base_qs.filter(patient_district_name__in=districts)
 
     # —6— Compute OT-overflow IDs
     cap_map = {
@@ -3436,7 +3392,7 @@ def download_ophthalmology_pdf_report(request):
                 'serial_no':    i+1,
                 'claim_id':     c.registration_id or c.case_id or 'N/A',
                 'patient_name': c.patient_name or f"Patient {c.member_id}",
-                'district':     c.district_name or 'N/A',
+                'district':     c.patient_district_name or 'N/A',
                 'hospital_id':  c.hospital_id or 'N/A',
                 'hospital_name':c.hospital_name or 'N/A',
                 'amount':       getattr(c,'preauth_initiated_amount',0) or 0,
@@ -3507,7 +3463,7 @@ def high_alert(request):
     )
 
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     annotated_cases = base_query.annotate(
@@ -3614,7 +3570,7 @@ def high_alert(request):
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_id': case.hospital_id,
             'hospital_name': case.hospital_name or 'N/A',
-            'district': case.district_name or 'N/A',
+            'district': case.patient_district_name or 'N/A',
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
             'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
             'watchlist_hospital': '✓' if case.is_watchlist else '',
@@ -3652,7 +3608,7 @@ def high_alert_district_distribution(request):
         Q(hospital_type='P') &
         (Q(preauth_initiated_date__date__gte=start_date) & Q(preauth_initiated_date__date__lte=end_date) | Q(admission_date__date__gte=start_date) & Q(admission_date__date__lte=end_date)))
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Apply full high alert criteria annotations
@@ -3738,12 +3694,12 @@ def high_alert_district_distribution(request):
     ).filter(total_flags__gte=2)
 
     # Aggregate by district
-    result = annotated.values('district_name').annotate(
+    result = annotated.values('patient_district_name').annotate(
         case_count=Count('id')
     ).order_by('-case_count')
 
     return JsonResponse({
-        'labels': [d['district_name'] or 'Unknown' for d in result],
+        'labels': [d['patient_district_name'] or 'Unknown' for d in result],
         'counts': [d['case_count'] for d in result]
     })
 
@@ -3765,7 +3721,7 @@ def high_alert_demographics(request, type):
     )
     
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Apply high alert criteria annotations
@@ -3916,7 +3872,7 @@ def high_alerts_geo(request):
         )
     )
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Apply full high alert criteria annotations
@@ -4002,15 +3958,15 @@ def high_alerts_geo(request):
     ).filter(total_flags__gte=2)
 
     # Aggregate by district
-    result = annotated.values('district_name').annotate(
+    result = annotated.values('patient_district_name').annotate(
         case_count=Count('id')
     ).order_by('-case_count')
 
     geo_data = []
     for row in result:
-        district_name = row['district_name']
+        patient_district_name = row['patient_district_name']
         cnt = row['case_count']
-        fid = SHAPEFILE_DISTRICT_MAPPING.get((district_name or '').lower())
+        fid = SHAPEFILE_DISTRICT_MAPPING.get((patient_district_name or '').lower())
         if fid is not None:
             geo_data.append({'fid': fid, 'count': cnt})
     # After building geo_data
@@ -4037,7 +3993,7 @@ def download_high_alerts_excel(request):
         (Q(preauth_initiated_date__date__gte=start_date) & Q(preauth_initiated_date__date__lte=end_date) | Q(admission_date__date__gte=start_date) & Q(admission_date__date__lte=end_date)))
     
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
 
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Annotate cases with same logic as high_alert view
@@ -4136,7 +4092,7 @@ def download_high_alerts_excel(request):
             'Patient Name': case.patient_name or f"Patient {case.member_id}",
             'Hospital ID': case.hospital_id,
             'Hospital Name': case.hospital_name or 'N/A',
-            'District': case.district_name or 'N/A',
+            'District': case.patient_district_name or 'N/A',
             'Preauth Initiated Date': case.preauth_initiated_date.strftime('%Y-%m-%d') if case.preauth_initiated_date else 'N/A',
             'Preauth Initiated Time': case.preauth_initiated_time or 'N/A',
             'Watchlist': case.is_watchlist,
@@ -4238,7 +4194,7 @@ def download_high_alert_report(request):
     )
     
     if districts:
-        base_query = base_query.filter(district_name__in=districts)
+        base_query = base_query.filter(patient_district_name__in=districts)
     
     flagged_ot_ids = get_ot_overflow_hospital_ids(start_date, end_date, districts)
     # Annotate and filter
@@ -4343,7 +4299,7 @@ def download_high_alert_report(request):
             'claim_id': case.registration_id or case.case_id,
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'hospital_name': case.hospital_name,
-            'district': case.district_name,
+            'district': case.patient_district_name,
             'triggered_flags': triggered_flags,
             'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
             'preauth_initiated_time': case.preauth_initiated_time,
