@@ -66,6 +66,7 @@ def import_data_view(request):
         required_columns = [
             'registration_id', 
             'admission_dt',
+            'preauth_init_date',
             'hospital_code',
             'amount_claim_initiated',
             'hospital_type',
@@ -97,11 +98,11 @@ def import_data_view(request):
                         messages.error(request, f"Skipped {uploaded_file.name}: Missing columns {', '.join(missing_cols)}")
                         continue
 
-                    # Parse admission_dt as datetime
-                    df['admission_dt'] = pd.to_datetime(df['admission_dt'], errors='coerce')
+                    # Parse preauth_init_date as datetime
+                    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'], errors='coerce')
 
                     # Drop rows with missing required fields
-                    valid_df = df.dropna(subset=['registration_id', 'admission_dt'])
+                    valid_df = df.dropna(subset=['registration_id', 'preauth_init_date'])
 
                     # Prepare model instances
                     instances = []
@@ -109,6 +110,7 @@ def import_data_view(request):
                         instances.append(Last24Hour(
                             registration_id=row.get('registration_id'),
                             admission_dt=row.get('admission_dt'),
+                            preauth_init_date=row.get('preauth_init_date'),
                             hospital_code=row.get('hospital_code'),
                             amount_claim_initiated=float(row['amount_claim_initiated']) if pd.notnull(row.get('amount_claim_initiated')) else None,
                             hospital_type=row.get('hospital_type'),
@@ -123,12 +125,12 @@ def import_data_view(request):
                             hosp_state_name=row.get('hosp_state_name'),
                             family_id=row.get('family_id'),
                         ))
-                    # print(instances)
+                    print(instances)
 
                     Last24Hour.objects.bulk_create(
                         instances,
                         update_conflicts=True,
-                        unique_fields=['registration_id', 'admission_dt'],
+                        unique_fields=['registration_id', 'preauth_init_date'],
                         update_fields=[
                             'hospital_code',
                             'amount_claim_initiated',
