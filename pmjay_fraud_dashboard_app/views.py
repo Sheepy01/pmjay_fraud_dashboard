@@ -449,23 +449,24 @@ def get_flagged_claims_details(request):
     qs, suspicious_hospitals = patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts)
 
     # 3. Pagination
-    paginator = Paginator(qs.order_by('preauth_initiated_date'), page_size)
+    paginator = Paginator(qs.order_by('preauth_init_date'), page_size)
     page_obj = paginator.get_page(page)
 
     # 4. Build response data
     data = []
     for idx, case in enumerate(page_obj.object_list, 1):
+        preauth_initiated_date = case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A'
+        preauth_initiated_time = case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A'
         data.append({
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'patient_district_name': case.patient_district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d') 
-                                      if case.preauth_initiated_date else 'N/A',
-            'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
-            'hospital_id': case.hospital_id or 'N/A',
+            'district_name': case.patient_district_name or 'N/A',
+            'preauth_initiated_date': preauth_initiated_date,
+            'preauth_initiated_time': preauth_initiated_time,
+            'hospital_id': case.hospital_code or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
-            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
+            'amount': float(case.amount_claim_initiated) if case.amount_claim_initiated else 0.0,
             'reason': 'Suspicious hospital'
         })
 
