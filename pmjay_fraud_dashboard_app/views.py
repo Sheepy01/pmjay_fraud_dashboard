@@ -506,38 +506,6 @@ def get_flagged_claims_by_district(request):
     
     return JsonResponse(data)
 
-# def get_all_flagged_claims(request):
-#     district_param = request.GET.get('district', '')
-#     districts = district_param.split(',') if district_param else []
-    
-#     # Get current date filter
-#     today = date(2025, 2, 5)
-    
-#     # Base query with today's filter
-#     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
-#     flagged_cases = Last24Hour.objects.filter(
-#         Q(hospital_id__in=suspicious_hospitals) &
-#         Q(hospital_type='P') &
-#         Q(preauth_initiated_date__date=today)  # Added today filter
-#     )
-    
-#     if districts:
-#         flagged_cases = flagged_cases.filter(patient_district_name__in=districts)
-    
-#     data = []
-#     for idx, case in enumerate(flagged_cases.order_by('preauth_initiated_date'), 1):
-#         data.append({
-#             'serial_no': idx,
-#             'claim_id': case.registration_id or case.case_id or 'N/A',
-#             'patient_name': case.patient_name or f"Patient {case.member_id}",
-#             'hospital_name': case.hospital_name or 'N/A',
-#             'patient_district_name': case.patient_district_name or 'N/A',
-#             'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
-#             'reason': 'Suspicious hospital'
-#         })
-    
-#     return JsonResponse({'data': data})
-
 def get_age_distribution(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -550,10 +518,10 @@ def get_age_distribution(request):
 
     # Age groups aggregation
     age_groups = {
-        '15-29': Count('id', filter=Q(age_years__gte=15, age_years__lte=29)),
-        '30-44': Count('id', filter=Q(age_years__gte=30, age_years__lte=44)),
-        '45-59': Count('id', filter=Q(age_years__gte=45, age_years__lte=59)),
-        '60+': Count('id', filter=Q(age_years__gte=60))
+        '15-29': Count('id', filter=Q(age__gte=15, age__lte=29)),
+        '30-44': Count('id', filter=Q(age__gte=30, age__lte=44)),
+        '45-59': Count('id', filter=Q(age__gte=45, age__lte=59)),
+        '60+': Count('id', filter=Q(age__gte=60))
     }
 
     age_data = queryset.aggregate(**age_groups)
