@@ -40,7 +40,7 @@ class Last24Hour(models.Model):
     hosp_pan_number = models.CharField(max_length=20, null=True, blank=True)
     hospital_type = models.CharField(max_length=10, null=True, blank=True)
     admission_dt = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField if always date/time
-    preauth_init_date = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField
+    preauth_init_date = models.DateTimeField(null=True, blank=True)  # Could be DateTimeField
     amount_preauth_initiated = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     preauth_approved_date = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField
     amount_preauth_approved = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -86,7 +86,7 @@ class Last24Hour(models.Model):
     last_insert_dt = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField
 
     class Meta:
-        unique_together = ('registration_id', 'admission_dt')
+        unique_together = ('registration_id', 'preauth_init_date')
         indexes = [
             models.Index(fields=['hospital_type', 'procedure_code']),
             models.Index(fields=['admission_dt']),

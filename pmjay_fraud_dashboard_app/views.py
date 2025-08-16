@@ -30,6 +30,7 @@ from django.contrib import messages
 from django.db import transaction
 import numpy as np
 import sys
+from collections import defaultdict
 
 def login_view(request):
     # If they’re already logged in, send them straight to dashboard
@@ -125,9 +126,12 @@ def import_data_view(request):
                             hosp_state_name=row.get('hosp_state_name'),
                             family_id=row.get('family_id'),
                         ))
-                    print(instances)
-
-                    Last24Hour.objects.bulk_create(
+                    # print(instances)
+                    for obj in instances:
+                        print(obj.registration_id, obj.preauth_init_date)
+                    new_records += len(instances)
+                    try:
+                        Last24Hour.objects.bulk_create(
                         instances,
                         update_conflicts=True,
                         unique_fields=['registration_id', 'preauth_init_date'],
@@ -146,9 +150,11 @@ def import_data_view(request):
                             'hosp_state_name',
                             'family_id'
                         ]
-                    )
-                    new_records += len(instances)
-                    # print(new_records)
+                        )
+                    except Exception as e:
+                        print('Bulk create error: ', e)
+                    
+                    print(new_records)
                 except Exception as e:
                     messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
                     continue
@@ -344,34 +350,41 @@ def get_ot_overflow_hospital_ids(start_date, end_date, districts=None):
     qs = Last24Hour.objects.filter(
         hospital_type='P',
         procedure_code__contains='SE',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
+    # print(qs)
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
     # Fetch all relevant cases at once
-    all_cases = list(qs.values('id', 'hospital_id', 'preauth_initiated_date', 'preauth_initiated_time'))
-    from collections import defaultdict
+    all_cases = list(qs.values('id', 'hospital_code', 'preauth_init_date'))
     cases_by_hospital = defaultdict(list)
     for case in all_cases:
-        cases_by_hospital[case['hospital_id']].append(case)
+        cases_by_hospital[case['hospital_code']].append(case)
     flagged_ot_ids = set()
     for hid, cap in cap_map.items():
         cases = sorted(
             cases_by_hospital.get(hid, []),
-            key=lambda x: (x['preauth_initiated_date'], x['preauth_initiated_time'])
+            key=lambda x: x['preauth_init_date']
         )
         if len(cases) > cap:
             flagged_ot_ids.update([c['id'] for c in cases[cap:]])
+    # print(len(flagged_ot_ids))
     return flagged_ot_ids
 
 def parse_date(startDate, endDate):
     try:
-        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d').date() if startDate else timezone.localdate()
+        start_date = datetime.datetime.strptime(startDate, '%Y-%m-%d') if startDate else timezone.now()
+        if timezone.is_naive(start_date):
+            start_date = timezone.make_aware(start_date)
+        start_date = start_date.date()
     except ValueError:
         start_date = timezone.localdate()
     try:
-        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d').date() if endDate else timezone.localdate()
+        end_date = datetime.datetime.strptime(endDate, '%Y-%m-%d') if endDate else timezone.now()
+        if timezone.is_naive(end_date):
+            end_date = timezone.make_aware(end_date)
+        end_date = end_date.date()
     except ValueError:
         end_date = timezone.localdate()
     return start_date, end_date
@@ -379,14 +392,13 @@ def parse_date(startDate, endDate):
 def patient_admitted_in_watchlist_hospital_base_query(start_date, end_date, districts):
     suspicious_hospitals = SuspiciousHospital.objects.values_list('hospital_id', flat=True)
     base_qs = Last24Hour.objects.filter(
-        hospital_id__in=suspicious_hospitals,
+        hospital_code__in=suspicious_hospitals,
         hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     if districts:
         base_qs = base_qs.filter(patient_district_name__in=districts)
-
     return base_qs, suspicious_hospitals
 
 def get_flagged_claims(request):
@@ -406,12 +418,12 @@ def get_flagged_claims(request):
     total = base_qs.count()
     # yesterday always relative to end_date?
     yesterday = end_date - timedelta(days=1)
-    yesterday_count = base_qs.filter(preauth_initiated_date__date=yesterday).count()
+    yesterday_count = base_qs.filter(preauth_init_date__date=yesterday).count()
     last_30_days = Last24Hour.objects.filter(
-        hospital_id__in=suspicious_hospitals,
+        hospital_code__in=suspicious_hospitals,
         hospital_type='P',
-        preauth_initiated_date__date__gte=end_date - timedelta(days=30),
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=end_date - timedelta(days=30),
+        preauth_init_date__date__lte=end_date
     )
     if districts:
         last_30_days = last_30_days.filter(patient_district_name__in=districts)
