@@ -858,13 +858,13 @@ def get_high_value_claims_details(request):
     # Case type filters (preserve original logic)
     case_filters = Q()
     if case_type == 'SURGICAL':
-        case_filters = Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
+        case_filters = Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000)
     elif case_type == 'MEDICAL':
-        case_filters = Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        case_filters = Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
     else:
         case_filters = (
-            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+            Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+            Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
         )
     
     base_query = base_query.filter(case_filters)
@@ -875,7 +875,7 @@ def get_high_value_claims_details(request):
         base_query = base_query.filter(patient_district_name__in=districts)
 
     # Pagination with ordering
-    paginator = Paginator(base_query.order_by('-claim_initiated_amount'), page_size)
+    paginator = Paginator(base_query.order_by('-amount_claim_initiated'), page_size)
     page_obj = paginator.get_page(page)
 
     # Data serialization
@@ -886,11 +886,11 @@ def get_high_value_claims_details(request):
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
             'patient_district_name': case.patient_district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
-            'preauth_initiated_time': case.preauth_initiated_time,
-            'hospital_id': case.hospital_id or 'N/A',
+            'preauth_initiated_date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+            'preauth_initiated_time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+            'hospital_id': case.hospital_code or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
-            'amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
+            'amount': float(case.amount_claim_initiated) if case.amount_claim_initiated else 0.0,
             'case_type': case.case_type.upper() if case.case_type else 'N/A'
         })
 
@@ -922,17 +922,17 @@ def get_high_value_claims_by_district(request):
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL') &
-            Q(claim_initiated_amount__gte=100000)
+            Q(amount_claim_initiated__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='MEDICAL') &
-            Q(claim_initiated_amount__gte=25000)
+            Q(amount_claim_initiated__gte=25000)
         )
     else:  # All
         base_query = base_query.filter(
-            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+            Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+            Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
         )
 
     if districts:
@@ -964,17 +964,17 @@ def get_high_value_age_distribution(request):
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL') &
-            Q(claim_initiated_amount__gte=100000)
+            Q(amount_claim_initiated__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='MEDICAL') &
-            Q(claim_initiated_amount__gte=25000)
+            Q(amount_claim_initiated__gte=25000)
         )
     else:
         base_query = base_query.filter(
-            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+            Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+            Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
         )
 
     if districts:
@@ -982,12 +982,12 @@ def get_high_value_age_distribution(request):
 
     # [Rest of the age grouping logic remains unchanged]
     age_groups = Case(
-        When(age_years__lt=20, then=Value('≤20')),
-        When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
-        When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
-        When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
-        When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
-        When(age_years__gte=60, then=Value('60+')),
+        When(age__lt=20, then=Value('≤20')),
+        When(age__gte=20, age__lt=30, then=Value('21-30')),
+        When(age__gte=30, age__lt=40, then=Value('31-40')),
+        When(age__gte=40, age__lt=50, then=Value('41-50')),
+        When(age__gte=50, age__lt=60, then=Value('51-60')),
+        When(age__gte=60, then=Value('60+')),
         default=Value('Unknown'),
         output_field=CharField()
     )
@@ -1022,17 +1022,17 @@ def get_high_value_gender_distribution(request):
     if case_type == 'SURGICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='SURGICAL') &
-            Q(claim_initiated_amount__gte=100000)
+            Q(amount_claim_initiated__gte=100000)
         )
     elif case_type == 'MEDICAL':
         base_query = base_query.filter(
             Q(case_type__iexact='MEDICAL') &
-            Q(claim_initiated_amount__gte=25000)
+            Q(amount_claim_initiated__gte=25000)
         )
     else:
         base_query = base_query.filter(
-            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-            Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+            Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+            Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
         )
 
     if districts:
@@ -1075,13 +1075,13 @@ def get_high_value_claims_geo(request):
     qs = high_value_claims_base_query(start_date, end_date)
     # thresholds
     if case_type == 'SURGICAL':
-        qs = qs.filter(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
+        qs = qs.filter(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000)
     elif case_type == 'MEDICAL':
-        qs = qs.filter(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000)
+        qs = qs.filter(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000)
     else:  # ALL
         qs = qs.filter(
-            Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-            Q(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
+            Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+            Q(case_type__iexact='MEDICAL',  amount_claim_initiated__gte=25000)
         )
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
@@ -2409,11 +2409,11 @@ def download_high_value_claims_excel(request):
     # 3) split into surgical & medical
     surgical_qs = qs.filter(
         case_type__iexact='SURGICAL',
-        claim_initiated_amount__gte=100000
+        amount_claim_initiated__gte=100000
     )
     medical_qs = qs.filter(
         case_type__iexact='MEDICAL',
-        claim_initiated_amount__gte=25000
+        amount_claim_initiated__gte=25000
     )
 
     # 4) helper to serialize
@@ -2425,11 +2425,11 @@ def download_high_value_claims_excel(request):
                 'Claim ID':      c.registration_id or c.case_id or 'N/A',
                 'Patient Name':  c.patient_name or f"Patient {c.member_id}",
                 'District':      c.patient_district_name or 'N/A',
-                'Preauth Initiated Date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
-                'Preauth Initiated Time': c.preauth_initiated_time,
-                'Hospital ID': c.hospital_id or 'N/A',
+                'Preauth Initiated Date': c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+                'Preauth Initiated Time': c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+                'Hospital ID': c.hospital_code or 'N/A',
                 'Hospital Name': c.hospital_name or 'N/A',
-                'Amount':        c.claim_initiated_amount or 0,
+                'Amount':        c.amount_claim_initiated or 0,
                 'Case Type':     c.case_type.upper() if c.case_type else 'N/A'
             })
         return rows
@@ -2514,9 +2514,9 @@ def download_high_value_claims_report(request):
     medical_qs  = base_qs.none()
 
     if case_type in ['all','surgical']:
-        surgical_qs = base_qs.filter(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000)
+        surgical_qs = base_qs.filter(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000)
     if case_type in ['all','medical']:
-        medical_qs  = base_qs.filter(case_type__iexact='MEDICAL',  claim_initiated_amount__gte=25000)
+        medical_qs  = base_qs.filter(case_type__iexact='MEDICAL',  amount_claim_initiated__gte=25000)
 
     if districts:
         surgical_qs = surgical_qs.filter(patient_district_name__in=districts)
@@ -2529,11 +2529,11 @@ def download_high_value_claims_report(request):
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
             'patient_district_name': c.patient_district_name or 'N/A',
-            'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
-            'preauth_initiated_time': c.preauth_initiated_time,
-            'hospital_id': c.hospital_id or 'N/A',
+            'preauth_initiated_date': c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+            'preauth_initiated_time': c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+            'hospital_id': c.hospital_code or 'N/A',
             'hospital_name': c.hospital_name or 'N/A',
-            'amount':        c.claim_initiated_amount or 0,
+            'amount':        c.amount_claim_initiated or 0,
             'case_type':     'SURGICAL'
         }
         for i, c in enumerate(surgical_qs)
@@ -2544,12 +2544,12 @@ def download_high_value_claims_report(request):
             'claim_id':      c.registration_id or c.case_id or 'N/A',
             'patient_name':  c.patient_name or f"Patient {c.member_id}",
             'patient_district_name': c.patient_district_name or 'N/A',
-            'preauth_initiated_date': c.preauth_initiated_date.strftime('%Y-%m-%d'),
-            'preauth_initiated_time': c.preauth_initiated_time,
-            'hospital_id': c.hospital_id or 'N/A',
+            'preauth_initiated_date': c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+            'preauth_initiated_time': c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+            'hospital_id': c.hospital_code or 'N/A',
             'hospital_name': c.hospital_name or 'N/A',
             'patient_district_name': c.patient_district_name or 'N/A',
-            'amount':        c.claim_initiated_amount or 0,
+            'amount':        c.amount_claim_initiated or 0,
             'case_type':     'MEDICAL'
         }
         for i, c in enumerate(medical_qs)
@@ -3454,8 +3454,8 @@ def high_alert(request):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),
@@ -3599,8 +3599,8 @@ def high_alert_district_distribution(request):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),
@@ -3712,8 +3712,8 @@ def high_alert_demographics(request, type):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),
@@ -3863,8 +3863,8 @@ def high_alerts_geo(request):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),
@@ -3985,8 +3985,8 @@ def download_high_alerts_excel(request):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),
@@ -4186,8 +4186,8 @@ def download_high_alert_report(request):
         is_watchlist=Value(True, output_field=BooleanField()),
         is_high_value=Case(
             When(
-                Q(case_type__iexact='SURGICAL', claim_initiated_amount__gte=100000) |
-                Q(case_type__iexact='MEDICAL', claim_initiated_amount__gte=25000),
+                Q(case_type__iexact='SURGICAL', amount_claim_initiated__gte=100000) |
+                Q(case_type__iexact='MEDICAL', amount_claim_initiated__gte=25000),
                 then=Value(True)
             ),
             default=Value(False),

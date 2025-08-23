@@ -1151,7 +1151,7 @@ $(document).ready(function() {
                                 <td>${item.serial_no}</td>
                                 <td>${item.claim_id}</td>
                                 <td>${item.patient_name}</td>
-                                <td>${item.district_name}</td>
+                                <td>${item.patient_district_name}</td>
                                 <td>${item.preauth_initiated_date}</td>
                                 <td>${item.preauth_initiated_time}</td>
                                 <td>${item.hospital_id}</td>
