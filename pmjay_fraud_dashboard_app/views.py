@@ -772,8 +772,8 @@ def download_flagged_claims_report(request):
 def high_value_claims_base_query(start_date, end_date):
     cases = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,  # Added today filter
-        preauth_initiated_date__date__lte=end_date,  # Added today filter
+        preauth_init_date__date__gte=start_date,  # Added today filter
+        preauth_init_date__date__lte=end_date,  # Added today filter
     )
     return cases
 
@@ -797,45 +797,45 @@ def get_high_value_claims(request):
     # Surgical cases filter (≥100,000)
     surgical_cases = cases.filter(
         Q(case_type__iexact='SURGICAL') &
-        Q(claim_initiated_amount__gte=100000)
+        Q(amount_claim_initiated__gte=100000)
     )
 
     # Medical cases filter (≥25,000)
     medical_cases = cases.filter(
         Q(case_type__iexact='MEDICAL') &
-        Q(claim_initiated_amount__gte=25000)
+        Q(amount_claim_initiated__gte=25000)
     )
 
     # Calculate metrics (now using today-filtered base)
     surgical_total = surgical_cases.aggregate(
-        Sum('claim_initiated_amount')
-    )['claim_initiated_amount__sum'] or 0
+        Sum('amount_claim_initiated')
+    )['amount_claim_initiated__sum'] or 0
     
     medical_total = medical_cases.aggregate(
-        Sum('claim_initiated_amount')
-    )['claim_initiated_amount__sum'] or 0
+        Sum('amount_claim_initiated')
+    )['amount_claim_initiated__sum'] or 0
 
     data = {
         'total_count': surgical_cases.count() + medical_cases.count(),
         'yesterday_count': (
-            surgical_cases.filter(preauth_initiated_date__date=yesterday).count() +
-            medical_cases.filter(preauth_initiated_date__date=yesterday).count()
+            surgical_cases.filter(preauth_init_date__date=yesterday).count() +
+            medical_cases.filter(preauth_init_date__date=yesterday).count()
         ),
         'last_30_days_count': (
-            surgical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count() +
-            medical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
+            surgical_cases.filter(preauth_init_date__date__gte=thirty_days_ago).count() +
+            medical_cases.filter(preauth_init_date__date__gte=thirty_days_ago).count()
         ),
         'surgical': {
             'count': surgical_cases.count(),
             'amount': surgical_total,
-            'yesterday': surgical_cases.filter(preauth_initiated_date__date=yesterday).count(),
-            'last_30_days': surgical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
+            'yesterday': surgical_cases.filter(preauth_init_date__date=yesterday).count(),
+            'last_30_days': surgical_cases.filter(preauth_init_date__date__gte=thirty_days_ago).count()
         },
         'medical': {
             'count': medical_cases.count(),
             'amount': medical_total,
-            'yesterday': medical_cases.filter(preauth_initiated_date__date=yesterday).count(),
-            'last_30_days': medical_cases.filter(preauth_initiated_date__date__gte=thirty_days_ago).count()
+            'yesterday': medical_cases.filter(preauth_init_date__date=yesterday).count(),
+            'last_30_days': medical_cases.filter(preauth_init_date__date__gte=thirty_days_ago).count()
         }
     }
     
