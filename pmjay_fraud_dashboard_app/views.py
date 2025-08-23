@@ -658,15 +658,15 @@ def download_flagged_claims_excel(request):
         'Claim ID': case.registration_id or case.case_id,
         'Patient Name': case.patient_name or f"Patient {case.member_id}",
         'District': case.patient_district_name,
-        'Preauth Initiated Date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
-        'Preauth Initiated Time': case.preauth_initiated_time,
-        'Hospital ID': case.hospital_id,
+        'Preauth Initiated Date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+        'Preauth Initiated Time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+        'Hospital ID': case.hospital_code,
         'Hospital Name': case.hospital_name,
-        'Amount': float(case.claim_initiated_amount) if case.claim_initiated_amount else 0.0,
+        'Amount': float(case.amount_claim_initiated) if case.amount_claim_initiated else 0.0,
         'Reason': 'Suspicious hospital',
-        'Date': case.preauth_initiated_date.strftime('%Y-%m-%d')
+        'Date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
     } for case in qs.only(
-        'registration_id', 'case_id', 'patient_name', 'member_id', 'patient_district_name', 'preauth_initiated_date', 'preauth_initiated_time', 'hospital_id', 'hospital_name', 'claim_initiated_amount', 'preauth_initiated_date'
+        'registration_id', 'case_id', 'patient_name', 'member_id', 'patient_district_name', 'preauth_init_date', 'preauth_init_date', 'hospital_code', 'hospital_name', 'amount_claim_initiated', 'preauth_init_date'
     )]
 
     # 4. Create DataFrame with defined column order
@@ -731,11 +731,11 @@ def download_flagged_claims_report(request):
             'claim_id':      case.registration_id or case.case_id or 'N/A',
             'patient_name':  case.patient_name or f"Patient {case.member_id}",
             'patient_district_name': case.patient_district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
-            'preauth_initiated_time': case.preauth_initiated_time,
-            'hospital_id': case.hospital_id or 'N/A',
+            'preauth_initiated_date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+            'preauth_initiated_time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+            'hospital_id': case.hospital_code or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
-            'amount':        case.claim_initiated_amount or 0,
+            'amount':        case.amount_claim_initiated or 0,
             'reason':        'Suspicious hospital'
         })
     report_districts = sorted({
