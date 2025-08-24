@@ -39,7 +39,7 @@ class Last24Hour(models.Model):
     hospital_district_cd = models.CharField(max_length=10, null=True, blank=True)
     hosp_pan_number = models.CharField(max_length=20, null=True, blank=True)
     hospital_type = models.CharField(max_length=10, null=True, blank=True)
-    admission_dt = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField if always date/time
+    admission_dt = models.DateTimeField(null=True, blank=True)  # Could be DateTimeField if always date/time
     preauth_init_date = models.DateTimeField(null=True, blank=True)  # Could be DateTimeField
     amount_preauth_initiated = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     preauth_approved_date = models.CharField(max_length=50, null=True, blank=True)  # Could be DateTimeField
@@ -100,7 +100,7 @@ class Last24Hour(models.Model):
 
     
 class HospitalBeds(models.Model):
-    hospital_id = models.CharField(max_length=50, unique=True)
+    hospital_code = models.CharField(max_length=50, unique=True)
     hospital_name = models.CharField(max_length=50, null=True, blank=True)
     bed_strength = models.IntegerField()
     number_of_surgeons = models.IntegerField(null=True, blank=True)

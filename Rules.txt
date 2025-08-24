@@ -1,0 +1,74 @@
+
+INITIAL RULES
+    1) Number of flagged claims
+        District-wise flagged cases (see the pattern whether increasing or
+        decreasing)
+
+        Flagging all the cases in the pre-auth data which are from
+        Suspicious hospital list.
+
+    2) High value claims
+        Case wise analysis (Identify the cases who claimed larger than 1
+        Lakhs)
+
+    3) Unusual treatment patterns
+
+    Case wise analysis
+
+    Hospital bed [Match the number of daily admissions of the hospital
+    with the bed strength of the hospital. If (Number of admissions > bed
+    strength) then mark all the cases of that hospital as suspicious.]
+
+    Time for Pre-auth [after 10PM will be considered as suspicious]
+
+    Emergency [in cataract, Oncology, Dialysis is considered as
+    suspicious]
+
+    More than 2 cases have same Family ID on the same day,
+
+    Geographic anomalies
+
+    Case wise analysis
+
+    Mapping between patient address with treatment in different geographic
+    location
+
+Date: 27th March 2025
+    All for private hospital
+    ## Geographic Anomalies: Patient State vs Hospital State Name
+                            In neighbouring state: Selected hospitals are not flagged(eg AIIMS)
+
+    ## High Value Claims: If more than Rs 100000 (for surgery)
+                        If more than Rs 25000 (for medical) 
+
+    ## Hospital Bed: Match the number of daily admissions of the hospital
+    with the bed strength of the hospital. If (Number of admissions > bed
+    strength) then mark all the cases of that hospital as suspicious.
+
+    ## Length of stay: if > 7 days
+
+    ## Unusual Treatment Patterns
+        ## Ophthalmology: ** Part A Cataract (package code will be provided)
+                        1) No. of OT 
+                        2) No. of surgeons 
+                        3) No more than 30 case per OT per Surgeon [1) Count the number of OT Cases from Suspicious Hospital Table by (Number of surgeons * 30)
+                                                                    2) Then we have to count the number of patients admitted in that hospital
+                                                                    3) When the number of OT cases exceeds then flag those patient cases that participated in exceeding
+                                                                    4) Count flagged patient cases and use this as the total ot cases
+                                                                    5) Display which cases have been flagged and in which hospitals along with how many number of ot and number of surgeons were there]
+
+                        ** Part B Cataract (Preauth Timimg) = 8AM to 6PM
+
+                        ** Part C Cataract (Age) < 40 years
+
+        ## Emergency [in cataract, Oncology, Dialysis is considered as
+        suspicious] but for some code this will not work
+
+        ## More than 2 cases have same Family ID on the same day
+
+    ## List of suspicious hospitals will be provided
+
+Date: 9th April 2025
+    Change NOFC to Patent admitted in Watchlist hospitals
+    Remove Unusual treatment Patterns
+    Make a excel file download function which should reflect the occurence of a case in multiple cards

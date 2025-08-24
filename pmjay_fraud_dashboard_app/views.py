@@ -100,17 +100,25 @@ def import_data_view(request):
                         continue
 
                     # Parse preauth_init_date as datetime
-                    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'], errors='coerce')
-
+                    try:
+                        df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'], errors='coerce')
+                        df['admission_dt'] = pd.to_datetime(df['admission_dt'], errors='coerce')
+                    except e:
+                        print("Errrrror", e)
                     # Drop rows with missing required fields
                     valid_df = df.dropna(subset=['registration_id', 'preauth_init_date'])
 
                     # Prepare model instances
                     instances = []
                     for _, row in valid_df.iterrows():
+                        admission_dt = row.get('admission_dt')
+                        if pd.isna(admission_dt):
+                            admission_dt = None
+                        elif isinstance(admission_dt, pd.Timestamp):
+                            admission_dt = admission_dt.to_pydatetime()
                         instances.append(Last24Hour(
                             registration_id=row.get('registration_id'),
-                            admission_dt=row.get('admission_dt'),
+                            admission_dt=admission_dt,
                             preauth_init_date=row.get('preauth_init_date'),
                             hospital_code=row.get('hospital_code'),
                             amount_claim_initiated=float(row['amount_claim_initiated']) if pd.notnull(row.get('amount_claim_initiated')) else None,
@@ -1099,151 +1107,149 @@ def get_high_value_claims_geo(request):
     return JsonResponse(result, safe=False)
 
 def hospital_bed_cases_base_query():
-    beds = HospitalBeds.objects.values('hospital_id', 'bed_strength')
-    bed_strengths = {h['hospital_id']: h['bed_strength'] for h in beds}
+    beds = HospitalBeds.objects.values('hospital_code', 'bed_strength')
+    bed_strengths = {h['hospital_code']: h['bed_strength'] for h in beds}
     return bed_strengths
 
 def get_hospital_bed_cases(request):
-    district_param = request.GET.get('district', '')
-    districts = district_param.split(',') if district_param else []
+    import traceback
+    try:
+        district_param = request.GET.get('district', '')
+        districts = district_param.split(',') if district_param else []
 
-    startDate = request.GET.get('start_date')
-    endDate = request.GET.get('end_date')
-    start_date, end_date = parse_date(startDate, endDate)
-    yesterday = end_date - timedelta(days=1)
-    thirty_days_ago = end_date - timedelta(days=30)
+        startDate = request.GET.get('start_date')
+        endDate = request.GET.get('end_date')
+        start_date, end_date = parse_date(startDate, endDate)
 
-    # 1. Load bed strengths
-    bed_strengths = hospital_bed_cases_base_query()
-    hospital_ids = list(bed_strengths.keys())
+        # 1. Load bed strengths
+        bed_strengths = hospital_bed_cases_base_query()
+        hospital_ids = list(bed_strengths.keys())
 
-    # 2. Helper to fetch admissions per hospital/date
-    def admissions_qs(start_date, end_date):
-        return Last24Hour.objects.filter(
-            Q(hospital_id__in=hospital_ids) &
-            (Q(admission_date__date__range=(start_date, end_date)) |
-             Q(admission_date__isnull=True, preauth_initiated_date__date__range=(start_date, end_date)))
+        # 2. Build base queryset: only private hospitals, filter by district if needed
+        qs = (
+            Last24Hour.objects
+            .filter(
+                hospital_type='P',
+                hospital_code__in=hospital_ids,
+                admission_dt__date__gte=start_date,
+                admission_dt__date__lte=end_date,
+            )
+        )
+        if districts:
+            qs = qs.filter(patient_district_name__in=districts)
+
+        # 3. Aggregate admissions per hospital per day
+        from django.db.models.functions import TruncDate
+        admissions = (
+            qs
+            .annotate(day=TruncDate('admission_dt'))
+            .values('hospital_code', 'hospital_name', 'patient_district_name', 'hosp_state_name', 'day')
+            .annotate(admissions=Count('id'))
         )
 
-    # 3. Today: compute per-hospital counts and find violations
-    today_adm = admissions_qs(start_date, end_date)
-    today_counts = today_adm.values('hospital_id').annotate(count=Count('id'))
-    violating_today = [a['hospital_id'] for a in today_counts
-                       if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
+        # 4. Flag violations: hospital exceeds bed strength on that day
+        violations = [
+            {
+                'hospital_code': adm['hospital_code'],
+                'hospital_name': adm['hospital_name'],
+                'district': adm['patient_district_name'],
+                'state': adm['hosp_state_name'],
+                'day': adm['day'].strftime('%Y-%m-%d') if adm['day'] else 'N/A',
+                'admissions': adm['admissions'],
+                'bed_capacity': bed_strengths.get(adm['hospital_code'], 0),
+                'excess': adm['admissions'] - bed_strengths.get(adm['hospital_code'], 0)
+            }
+            for adm in admissions
+            if adm['admissions'] > bed_strengths.get(adm['hospital_code'], 0)
+        ]
 
-    # 4. Yesterday: similar
-    yest_adm = admissions_qs(yesterday, yesterday)
-    yest_counts = yest_adm.values('hospital_id').annotate(count=Count('id'))
-    violating_yesterday = [a['hospital_id'] for a in yest_counts
-                            if a['count'] > bed_strengths.get(a['hospital_id'], 0)]
+        # 5. Prepare summary counts
+        total_violations = len(violations)
+        yesterday = end_date - timedelta(days=1)
+        yesterday_violations = sum(1 for v in violations if v['day'] == yesterday.strftime('%Y-%m-%d'))
+        thirty_days_ago = end_date - timedelta(days=30)
+        last_30_days_violations = sum(1 for v in violations if v['day'] >= thirty_days_ago.strftime('%Y-%m-%d'))
 
-    # 5. Last 30 days: annotate per hospital per day, then distinct hospital overflow
-    range_adm = admissions_qs(thirty_days_ago, end_date)
-    # annotate day and count
-    from django.db.models.functions import Coalesce, TruncDate
-
-    annotated = (
-        range_adm
-        .annotate(ts=Coalesce('admission_date', 'preauth_initiated_date'))
-        .annotate(day=TruncDate('ts'))
-        .values('hospital_id', 'day')
-        .annotate(count=Count('id'))
-        .filter(count__gt=0)  # initial filter, we'll apply bed check below
-    )
-    violating_30_set = set(
-        rec['hospital_id']
-        for rec in annotated
-        if rec['count'] > bed_strengths.get(rec['hospital_id'], 0)
-    )
-
-    # 6. Fetch hospital names for today's violations
-    names = Last24Hour.objects.filter(
-        hospital_id__in=violating_today
-    ).values_list('hospital_id', 'hospital_name').distinct()
-    hospital_names = {hid: name for hid, name in names}
-
-    # 7. Build detailed list for today's violations
-    details_today = []
-    for hid in violating_today:
-        count = next((a['count'] for a in today_counts if a['hospital_id'] == hid), 0)
-        details_today.append({
-            'hospital': hospital_names.get(hid, f"Hospital {hid}"),
-            'admissions': count,
-            'bed_strength': bed_strengths.get(hid, 0)
+        return JsonResponse({
+            'total': total_violations,
+            'yesterday': yesterday_violations,
+            'last_30_days': last_30_days_violations,
+            'violations': violations
         })
-
-    # 8. Prepare response
-    data = {
-        'total': len(violating_today),
-        'yesterday': len(violating_yesterday),
-        'last_30_days': len(violating_30_set),
-        'violations_today': details_today
-    }
-    return JsonResponse(data)
+    except Exception as e:
+        print("Error in get_hospital_bed_cases:", e)
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
 
 def get_hospital_bed_details(request):
     district_param = request.GET.get('district', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 50))
     districts = district_param.split(',') if district_param else []
-    
+
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
-    
+
     # 1. Load bed strengths
     bed_strengths = hospital_bed_cases_base_query()
-    
-    # 2. Get today's admissions with hospital details
-    violations = (
+    hospital_ids = list(bed_strengths.keys())
+
+    # 2. Aggregate admissions per hospital per day
+    qs = (
         Last24Hour.objects
         .filter(
-            Q(hospital_type='P') &
-            Q(admission_date__date__gte=start_date) &
-            Q(admission_date__date__lte=end_date) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-        )
-        .values('hospital_id', 'hospital_name', 'patient_district_name', 'state_name')
-        .annotate(
-            admissions=Count('id'),
-            last_violation_date=Max('admission_date')
+            hospital_type='P',
+            hospital_code__in=hospital_ids,
+            admission_dt__date__gte=start_date,
+            admission_dt__date__lte=end_date,
         )
     )
-    
     if districts:
-        violations = violations.filter(patient_district_name__in=districts)
-    
-    # 3. Add bed capacity and filter violations
-    enhanced_violations = []
-    for violation in violations:
-        bed_capacity = bed_strengths.get(violation['hospital_id'], 0)
-        if violation['admissions'] > bed_capacity:
-            enhanced_violations.append({
-                **violation,
-                'bed_capacity': bed_capacity,
-                'excess': violation['admissions'] - bed_capacity
-            })
-    
+        qs = qs.filter(patient_district_name__in=districts)
+
+    admissions = (
+        qs
+        .annotate(day=TruncDate('admission_dt'))
+        .values('hospital_code', 'hospital_name', 'patient_district_name', 'hosp_state_name', 'admission_dt')
+        .annotate(admissions=Count('id'))
+    )
+
+    # 3. Flag violations: hospital exceeds bed strength on that day
+    violations = [
+        {
+            'hospital_code': adm['hospital_code'],
+            'hospital_name': adm['hospital_name'],
+            'district': adm['patient_district_name'],
+            'state': adm['hosp_state_name'],
+            'day': adm['admission_dt'].strftime('%Y-%m-%d') if adm['admission_dt'] else 'N/A',
+            'admissions': adm['admissions'],
+            'bed_capacity': bed_strengths.get(adm['hospital_code'], 0),
+            'excess': adm['admissions'] - bed_strengths.get(adm['hospital_code'], 0)
+        }
+        for adm in admissions
+        if adm['admissions'] > bed_strengths.get(adm['hospital_code'], 0)
+    ]
+
     # 4. Paginate in-memory list
-    paginator = Paginator(enhanced_violations, page_size)
+    paginator = Paginator(violations, page_size)
     page_obj = paginator.get_page(page)
-    
+
     # 5. Serialize data
     data = []
     for idx, violation in enumerate(page_obj.object_list, 1):
         data.append({
             'serial_no': (page_obj.number - 1) * page_size + idx,
-            'hospital_id': violation['hospital_id'],
+            'hospital_id': violation['hospital_code'],
             'hospital_name': violation['hospital_name'],
-            'district': violation['patient_district_name'],
-            'state': violation['state_name'],
+            'district': violation['district'],
+            'state': violation['state'],
             'bed_capacity': violation['bed_capacity'],
             'admissions': violation['admissions'],
             'excess': violation['excess'],
-            'last_violation': violation['last_violation_date'].strftime('%Y-%m-%d') if violation['last_violation_date'] else 'N/A'
+            'last_violation': violation['day']
         })
-    
+
     return JsonResponse({
         'data': data,
         'pagination': {
@@ -1266,14 +1272,12 @@ def hospital_violations_by_district(request):
     result = (
         Last24Hour.objects
         .filter(
-            Q(hospital_type='P') &
-            Q(admission_date__date__gte=start_date) &
-            Q(admission_date__date__lte=end_date) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+            hospital_type='P',
+            admission_dt__date__gte=start_date,
+            admission_dt__date__lte=end_date
         )
         .values('patient_district_name')
-        .annotate(violation_count=Count('hospital_id', distinct=True))
+        .annotate(violation_count=Count('hospital_code', distinct=True))
         .order_by('-violation_count')
     )
     
