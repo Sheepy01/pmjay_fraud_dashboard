@@ -2234,20 +2234,39 @@ $(document).ready(function() {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;
 
-                if (
-                    window[canvasId] &&
-                    typeof window[canvasId].destroy === 'function'
-                  ) {
+                // Prefer pairs → fallback to states
+                const hasPairs = Array.isArray(data?.pairs) && data.pairs.length > 0;
+                const labelsRaw = hasPairs
+                    ? data.pairs
+                    : (Array.isArray(data?.states) ? data.states : []);
+                const valuesRaw = Array.isArray(data?.counts) ? data.counts : [];
+
+                // Guard: keep labels and values same length
+                const n = Math.min(labelsRaw.length, valuesRaw.length);
+                const labels = labelsRaw.slice(0, n);
+                const values = valuesRaw.slice(0, n);
+
+                // If nothing to render, clear any previous chart and exit gracefully
+                if (!n) {
+                    if (window[canvasId] && typeof window[canvasId].destroy === 'function') {
+                        window[canvasId].destroy();
+                    }
+                    console.debug(`[${canvasId}] No data to render`, data);
+                    return;
+                }
+
+                // Destroy old chart instance if exists
+                if (window[canvasId] && typeof window[canvasId].destroy === 'function') {
                     window[canvasId].destroy();
-                  }
-                
+                }
+
                 window[canvasId] = new Chart(ctx, {
                     type: 'bar',
                     data: {
-                        labels: data.states,
+                        labels,
                         datasets: [{
-                            label: 'State Anomalies',
-                            data: data.counts,
+                            label: hasPairs ? 'State Pair Anomalies' : 'State Anomalies',
+                            data: values,
                             backgroundColor: 'rgba(54, 162, 235, 0.7)',
                             borderColor: 'rgba(54, 162, 235, 1)',
                             borderWidth: 1
@@ -2260,7 +2279,7 @@ $(document).ready(function() {
                             legend: { display: false },
                             tooltip: {
                                 callbacks: {
-                                    label: context => `${context.parsed.y} state mismatches`
+                                    label: (ctx) => `${ctx.parsed.y} case(s)`
                                 }
                             },
                             datalabels: {
@@ -2268,9 +2287,7 @@ $(document).ready(function() {
                                 align: 'end',
                                 color: '#222',
                                 font: { weight: 'regular' },
-                                formatter: function(value) {
-                                    return value;
-                                }
+                                formatter: (value) => value
                             }
                         },
                         scales: {
@@ -2280,18 +2297,20 @@ $(document).ready(function() {
                                 ticks: { precision: 0 }
                             },
                             x: {
-                                title: { display: true, text: 'Patient States' },
-                                ticks: { 
+                                title: { display: true, text: hasPairs ? 'Patient State → Hospital State' : 'Patient States' },
+                                ticks: {
                                     autoSkip: false,
                                     maxRotation: 45,
-                                    minRotation: 45 
+                                    minRotation: 45
                                 }
                             }
                         }
                     },
-                    plugins: [ChartDataLabels]
+                    // Load datalabels plugin only if available
+                    plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []
                 });
             },
+
             renderPieChart: function(canvasId, data, calloutId) {
                 const ctx = document.getElementById(canvasId)?.getContext('2d');
                 if (!ctx) return;

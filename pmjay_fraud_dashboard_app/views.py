@@ -1702,9 +1702,9 @@ def get_geo_anomalies(request):
     # Base queryset - only private hospitals with state mismatches
     anomalies = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name'))
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+    ).exclude(patient_state_name=F('hosp_state_name'))
 
     # Apply district filter (patient's district)
     if districts:
@@ -1712,27 +1712,27 @@ def get_geo_anomalies(request):
 
     # Today's count
     today_anomalies = anomalies.filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+        Q(admission_dt__date__gte=start_date) &
+        Q(admission_dt__date__lte=end_date) | 
+        Q(admission_dt__isnull=True, preauth_init_date__date__gte=start_date) &
+        Q(admission_dt__isnull=True, preauth_init_date__date__lte=end_date)
     )
     
     # Yesterday's count
     yesterday_anomalies = anomalies.filter(
-        Q(admission_date__date=yesterday) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date=yesterday)
+        Q(admission_dt__date=yesterday) | 
+        Q(admission_dt__isnull=True, preauth_init_date__date=yesterday)
     )
     
     # Last 30 days count
     last_30_days_anomalies = anomalies.filter(
-        Q(admission_date__gte=thirty_days_ago) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__gte=thirty_days_ago)
+        Q(admission_dt__gte=thirty_days_ago) | 
+        Q(admission_dt__isnull=True, preauth_init_date__gte=thirty_days_ago)
     )
 
     # Get state mismatch statistics
     state_mismatches = (
-        anomalies.values('state_name', 'hospital_state_name')
+        anomalies.values('patient_state_name', 'hosp_state_name')
         .annotate(count=Count('id'))
         .order_by('-count')[:10]  # Top 10 mismatch pairs
     )
@@ -1758,14 +1758,14 @@ def get_geo_anomalies_details(request):
     
     cases = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-    ).order_by('state_name', 'hospital_state_name')
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+    ).exclude(patient_state_name=F('hosp_state_name')).filter(
+        Q(admission_dt__date__gte=start_date) &
+        Q(admission_dt__date__lte=end_date) | 
+        Q(admission_dt__isnull=True, preauth_init_date__date__gte=start_date) &
+        Q(admission_dt__isnull=True, preauth_init_date__date__lte=end_date)
+    ).order_by('patient_state_name', 'hosp_state_name')
     
     if districts:
         cases = cases.filter(patient_district_name__in=districts)
@@ -1779,13 +1779,13 @@ def get_geo_anomalies_details(request):
             'serial_no': (page_obj.number - 1) * page_size + idx,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'patient_district_name': case.patient_district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.date() or 'N/A',
-            'preauth_initiated_time': case.preauth_initiated_time or 'N/A',
-            'hospital_id': case.hospital_id or 'N/A',
+            'district_name': case.patient_district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+            'preauth_initiated_time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+            'hospital_id': case.hospital_code or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
-            'patient_state': case.state_name or 'N/A',
-            'hospital_state': case.hospital_state_name or 'N/A',
+            'patient_state': case.patient_state_name or 'N/A',
+            'hospital_state': case.hosp_state_name or 'N/A',
         })
 
     return JsonResponse({
@@ -1807,25 +1807,47 @@ def get_geo_violations_by_state(request):
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
     
-    cases = Last24Hour.objects.filter(
-        hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+    cases = (
+        Last24Hour.objects
+        .filter(
+            hospital_type='P',
+            patient_state_name__isnull=False,
+            hosp_state_name__isnull=False
+        )
+        .exclude(patient_state_name=F('hosp_state_name'))
+        .filter(
+            (
+                Q(admission_dt__date__gte=start_date) &
+                Q(admission_dt__date__lte=end_date)
+            ) |
+            (
+                Q(admission_dt__isnull=True) &
+                Q(preauth_init_date__date__gte=start_date) &
+                Q(preauth_init_date__date__lte=end_date)
+            )
+        )
     )
     
     if districts:
         cases = cases.filter(patient_district_name__in=districts)
 
-    result = cases.values('state_name').annotate(count=Count('id')).order_by('-count')
+    # Group by BOTH patient_state and hospital_state
+    result = (
+        cases.values('patient_state_name', 'hosp_state_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    # Build label like "Jharkhand → Bihar"
+    states_pairs = [
+        f"{item['patient_state_name']} → {item['hosp_state_name']}"
+        for item in result
+    ]
+    counts = [item['count'] for item in result]
     
     return JsonResponse({
-        'states': [item['state_name'] for item in result],
-        'counts': [item['count'] for item in result]
+        'pairs': states_pairs,
+        'counts': counts
     })
 
 def get_geo_violations_demographics(request, type):
@@ -1838,26 +1860,33 @@ def get_geo_violations_demographics(request, type):
     
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-    ).order_by('state_name', 'hospital_state_name')
-    
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+        ).exclude(
+            patient_state_name=F('hosp_state_name')
+        ).filter(
+            (
+                Q(admission_dt__date__gte=start_date) &
+                Q(admission_dt__date__lte=end_date)
+            ) |
+            (
+                Q(admission_dt__isnull=True) &
+                Q(preauth_init_date__date__gte=start_date) &
+                Q(preauth_init_date__date__lte=end_date)
+            )
+        ).order_by('patient_state_name', 'hosp_state_name')
+
     if districts:
         base_query = base_query.filter(patient_district_name__in=districts)
 
     if type == 'age':
         age_groups = Case(
-            When(age_years__lt=20, then=Value('≤20')),
-            When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
-            When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
-            When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
-            When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
-            When(age_years__gte=60, then=Value('60+')),
+            When(age__lt=20, then=Value('≤20')),
+            When(age__gte=20, age__lt=30, then=Value('21-30')),
+            When(age__gte=30, age__lt=40, then=Value('31-40')),
+            When(age__gte=40, age__lt=50, then=Value('41-50')),
+            When(age__gte=50, age__lt=60, then=Value('51-60')),
+            When(age__gte=60, then=Value('60+')),
             default=Value('Unknown'),
             output_field=CharField()
         )
@@ -1904,14 +1933,21 @@ def get_geo_violations_geo(request):
     # base queryset
     qs = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) | 
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-    )
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+        ).exclude(
+            patient_state_name=F('hosp_state_name')
+        ).filter(
+            (
+                Q(admission_dt__date__gte=start_date) &
+                Q(admission_dt__date__lte=end_date)
+            ) |
+            (
+                Q(admission_dt__isnull=True) &
+                Q(preauth_init_date__date__gte=start_date) &
+                Q(preauth_init_date__date__lte=end_date)
+            )
+        )
 
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
@@ -2977,16 +3013,21 @@ def download_geo_anomalies_excel(request):
     # 3) Query exactly as in get_geo_anomalies_details, but no pagination
     qs = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(
-        state_name=F('hospital_state_name')
-    ).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-    ).order_by('state_name','hospital_state_name')
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+        ).exclude(
+            patient_state_name=F('hosp_state_name')
+        ).filter(
+            (
+                Q(admission_dt__date__gte=start_date) &
+                Q(admission_dt__date__lte=end_date)
+            ) |
+            (
+                Q(admission_dt__isnull=True) &
+                Q(preauth_init_date__date__gte=start_date) &
+                Q(preauth_init_date__date__lte=end_date)
+            )
+        ).order_by('patient_state_name', 'hosp_state_name')
 
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
@@ -2999,12 +3040,12 @@ def download_geo_anomalies_excel(request):
             'Claim ID':         c.registration_id or c.case_id or 'N/A',
             'Patient Name':     c.patient_name or f"Patient {c.member_id}",
             'District':         c.patient_district_name or 'N/A',
-            'Preauth Initiated Date':         c.preauth_initiated_date.date() or 'N/A',
-            'Preauth Initiated Time':         c.preauth_initiated_time or 'N/A',
-            'Hospital ID':    c.hospital_id or 'N/A',
+            'Preauth Initiated Date':         c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+            'Preauth Initiated Time':         c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+            'Hospital ID':    c.hospital_code or 'N/A',
             'Hospital Name':    c.hospital_name or 'N/A',
-            'Patient State':    c.state_name or 'N/A',
-            'Hospital State':   c.hospital_state_name or 'N/A',
+            'Patient State':    c.patient_state_name or 'N/A',
+            'Hospital State':   c.hosp_state_name or 'N/A',
         })
 
     df = pd.DataFrame(rows)
@@ -3069,17 +3110,21 @@ def download_geo_anomalies_pdf_report(request):
     # 2) Fetch full anomalies (no pagination)
     qs = Last24Hour.objects.filter(
         hospital_type='P',
-        state_name__isnull=False,
-        hospital_state_name__isnull=False
-    ).exclude(state_name=F('hospital_state_name')).filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-    )
-    if districts:
-        qs = qs.filter(patient_district_name__in=districts)
-    qs = qs.order_by('state_name','hospital_state_name')
+        patient_state_name__isnull=False,
+        hosp_state_name__isnull=False
+        ).exclude(
+            patient_state_name=F('hosp_state_name')
+        ).filter(
+            (
+                Q(admission_dt__date__gte=start_date) &
+                Q(admission_dt__date__lte=end_date)
+            ) |
+            (
+                Q(admission_dt__isnull=True) &
+                Q(preauth_init_date__date__gte=start_date) &
+                Q(preauth_init_date__date__lte=end_date)
+            )
+        ).order_by('patient_state_name', 'hosp_state_name')
 
     # 3) Build rows
     rows = []
@@ -3089,12 +3134,12 @@ def download_geo_anomalies_pdf_report(request):
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
             'district':     c.patient_district_name or 'N/A',
-            'preauth_initiated_date':     c.preauth_initiated_date.date() or 'N/A',
-            'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
-            'hospital_id':c.hospital_id or 'N/A',
+            'preauth_initiated_date':     c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+            'preauth_initiated_time':     c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+            'hospital_id':c.hospital_code or 'N/A',
             'hospital_name':c.hospital_name or 'N/A',
-            'patient_state':c.state_name or 'N/A',
-            'hospital_state':c.hospital_state_name or 'N/A',
+            'patient_state':c.patient_state_name or 'N/A',
+            'hospital_state':c.hosp_state_name or 'N/A',
         })
 
     # 4) District line
