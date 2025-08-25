@@ -755,7 +755,7 @@ def download_flagged_claims_report(request):
     # 3) Render HTML via a dedicated template
     context = {
         'logo_url':    request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':       'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'title':       'SAFU DASHBOARD ANALYSIS REPORT',
         'date':        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'table_rows':  table_rows,
         'report_districts': report_districts,
@@ -1264,61 +1264,102 @@ def get_hospital_bed_details(request):
 def hospital_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
-    
+
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
-    
-    result = (
+
+    # 1. Load bed strengths
+    bed_strengths = hospital_bed_cases_base_query()
+    hospital_ids = list(bed_strengths.keys())
+
+    # 2. Aggregate admissions per hospital per day
+    qs = (
         Last24Hour.objects
         .filter(
             hospital_type='P',
+            hospital_code__in=hospital_ids,
             admission_dt__date__gte=start_date,
-            admission_dt__date__lte=end_date
+            admission_dt__date__lte=end_date,
         )
-        .values('patient_district_name')
-        .annotate(violation_count=Count('hospital_code', distinct=True))
-        .order_by('-violation_count')
     )
-    
     if districts:
-        result = result.filter(patient_district_name__in=districts)
-    
+        qs = qs.filter(patient_district_name__in=districts)
+
+    admissions = (
+        qs
+        .annotate(day=TruncDate('admission_dt'))
+        .values('hospital_code', 'patient_district_name', 'day')
+        .annotate(admissions=Count('id'))
+    )
+
+    # 3. Flag violations: hospital exceeds bed strength on that day
+    violations = [
+        adm['patient_district_name']
+        for adm in admissions
+        if adm['admissions'] > bed_strengths.get(adm['hospital_code'], 0)
+    ]
+
+    # 4. Count violations per district
+    from collections import Counter
+    district_counts = Counter(violations)
+
     return JsonResponse({
-        'districts': [item['patient_district_name'] or 'Unknown' for item in result],
-        'counts': [item['violation_count'] for item in result]
+        'districts': list(district_counts.keys()),
+        'counts': list(district_counts.values())
     })
 
 def get_hospital_bed_violations_geo(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
 
-    # parse dates
+    # Parse dates
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
 
-    # base queryset
-    qs = Last24Hour.objects.filter(
-        Q(hospital_type='P') &
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
+    # Load bed strengths
+    bed_strengths = hospital_bed_cases_base_query()
+    hospital_ids = list(bed_strengths.keys())
+
+    # Base queryset: only private hospitals, filter by district if needed
+    qs = (
+        Last24Hour.objects
+        .filter(
+            hospital_type='P',
+            hospital_code__in=hospital_ids,
+            admission_dt__date__gte=start_date,
+            admission_dt__date__lte=end_date,
+        )
     )
-    
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
 
-    # aggregate by patient_district_name
-    agg = qs.values('patient_district_name').annotate(count=Count('hospital_id', distinct=True))
+    # Aggregate admissions per hospital per day
+    admissions = (
+        qs
+        .annotate(day=TruncDate('admission_dt'))
+        .values('hospital_code', 'patient_district_name', 'day')
+        .annotate(admissions=Count('id'))
+    )
 
-    # map to FID
+    # Flag violations: hospital exceeds bed strength on that day
+    violations = [
+        adm['patient_district_name']
+        for adm in admissions
+        if adm['admissions'] > bed_strengths.get(adm['hospital_code'], 0)
+    ]
+
+    # Count violations per district
+    from collections import Counter
+    district_counts = Counter(violations)
+
+    # Map to FID for geo output
     result = []
-    for row in agg:
-        fid = SHAPEFILE_DISTRICT_MAPPING.get(row['patient_district_name'].lower())
+    for district, count in district_counts.items():
+        fid = SHAPEFILE_DISTRICT_MAPPING.get(district.lower())
         if fid is not None:
-            result.append({'fid': fid, 'count': row['count']})
+            result.append({'fid': fid, 'count': count})
 
     return JsonResponse(result, safe=False)
 
@@ -1339,8 +1380,8 @@ def get_family_id_cases(request):
     # 4) Build base queryset within the window
     base_qs = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     if districts:
         base_qs = base_qs.filter(patient_district_name__in=districts)
@@ -1348,7 +1389,7 @@ def get_family_id_cases(request):
     # 5) Find families with >1 claim *per day* in that window
     suspicious_families = (
         base_qs
-        .annotate(day=TruncDate('preauth_initiated_date'))
+        .annotate(day=TruncDate('preauth_init_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
@@ -1360,14 +1401,14 @@ def get_family_id_cases(request):
     # 7) Yesterday’s count: same threshold >1
     yest_qs = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date=yesterday
+        preauth_init_date__date=yesterday
     )
     if districts:
         yest_qs = yest_qs.filter(patient_district_name__in=districts)
 
     yest_families = (
         yest_qs
-        .annotate(day=TruncDate('preauth_initiated_date'))
+        .annotate(day=TruncDate('preauth_init_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
@@ -1378,8 +1419,8 @@ def get_family_id_cases(request):
     # 8) Last 30 days: total unique families for those suspicious families
     thr_qs = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date__gte=thirty_days_ago,
-        preauth_initiated_date__date__lte=end_date,
+        preauth_init_date__date__gte=thirty_days_ago,
+        preauth_init_date__date__lte=end_date,
         family_id__in=violating_family_ids
     )
     if districts:
@@ -1395,7 +1436,7 @@ def get_family_id_cases(request):
             .filter(
                 hospital_type='P',
                 family_id=f['family_id'],
-                preauth_initiated_date__date=f['day']
+                preauth_init_date__date=f['day']
             )
             .values_list('hospital_name', flat=True)
             .distinct()
@@ -1427,7 +1468,7 @@ def get_family_id_cases_details(request):
     
     # Subquery: Get family_ids with more than 1 cases 
     suspicious_families = Last24Hour.objects.annotate(
-        day=TruncDate('preauth_initiated_date')
+        day=TruncDate('preauth_init_date')
     ).filter(
         day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
@@ -1440,9 +1481,9 @@ def get_family_id_cases_details(request):
     cases = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
-    ).order_by('family_id', 'preauth_initiated_date')
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
+    ).order_by('family_id', 'preauth_init_date')
     
     if districts:
         cases = cases.filter(patient_district_name__in=districts)
@@ -1459,12 +1500,12 @@ def get_family_id_cases_details(request):
             'family_id': case.family_id,
             'claim_id': case.registration_id or case.case_id or 'N/A',
             'patient_name': case.patient_name or f"Patient {case.member_id}",
-            'patient_district_name': case.patient_district_name or 'N/A',
-            'preauth_initiated_date': case.preauth_initiated_date.strftime('%Y-%m-%d'),
-            'preauth_initiated_time': case.preauth_initiated_time,
-            'hospital_id': case.hospital_id or 'N/A',
+            'district_name': case.patient_district_name or 'N/A',
+            'preauth_initiated_date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+            'preauth_initiated_time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+            'hospital_id': case.hospital_code or 'N/A',
             'hospital_name': case.hospital_name or 'N/A',
-            'date': case.preauth_initiated_date.date()
+            'date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
         })
     
     return JsonResponse({
@@ -2566,7 +2607,7 @@ def download_high_value_claims_report(request):
     # 6) Render
     context = {
         'logo_url':                request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':                   'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'title':                   'SAFU DASHBOARD ANALYSIS REPORT',
         'date':                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'case_type':               case_type,
         'report_districts':        report_districts,
@@ -2597,54 +2638,56 @@ def download_high_value_claims_report(request):
 def download_hospital_bed_cases_excel(request):
     # 1) District filter
     district_param = request.GET.get('district', '')
-    districts     = district_param.split(',') if district_param else []
+    districts = district_param.split(',') if district_param else []
 
-    # 2) date
+    # 2) Date range
     startDate = request.GET.get('start_date')
     endDate = request.GET.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
 
     # 3) Build bed_strength lookup
     bed_strengths = hospital_bed_cases_base_query()
+    hospital_ids = list(bed_strengths.keys())
 
-    # 4) Query today's admissions + last_violation_date
+    # 4) Query admissions per hospital per day
     qs = (
         Last24Hour.objects
         .filter(
-            Q(admission_date__date__gte=start_date) &
-            Q(admission_date__date__lte=end_date) |
-            Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-            Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-        )
-        .values('hospital_id','hospital_name','patient_district_name','state_name')
-        .annotate(
-            admissions=Count('id'),
-            last_violation_date=Max('admission_date')
+            hospital_type='P',
+            hospital_code__in=hospital_ids,
+            admission_dt__date__gte=start_date,
+            admission_dt__date__lte=end_date,
         )
     )
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
 
-    # 5) Compute “enhanced” where admissions > capacity
-    enhanced = []
-    for v in qs:
-        cap = bed_strengths.get(v['hospital_id'], 0)
-        if v['admissions'] > cap:
-            enhanced.append({
-                'S.No':           len(enhanced) + 1,
-                'Hospital ID':    v['hospital_id'],
-                'Hospital Name':  v['hospital_name'],
-                'District':       v['patient_district_name'],
-                'State':          v['state_name'],
-                'Bed Capacity':   cap,
-                'Admissions':     v['admissions'],
-                'Excess':         v['admissions'] - cap,
-                'Last Violation': v['last_violation_date'].strftime('%Y-%m-%d')
-                                     if v['last_violation_date'] else 'N/A'
+    admissions = (
+        qs
+        .annotate(day=TruncDate('admission_dt'))
+        .values('hospital_code', 'hospital_name', 'patient_district_name', 'hosp_state_name', 'day')
+        .annotate(admissions=Count('id'))
+    )
+
+    # 5) Flag violations (admissions > capacity on that day)
+    violations = []
+    for adm in admissions:
+        cap = bed_strengths.get(adm['hospital_code'], 0)
+        if adm['admissions'] > cap:
+            violations.append({
+                'S.No': len(violations) + 1,
+                'Hospital ID': adm['hospital_code'],
+                'Hospital Name': adm['hospital_name'],
+                'District': adm['patient_district_name'],
+                'State': adm['hosp_state_name'],
+                'Bed Capacity': cap,
+                'Admissions': adm['admissions'],
+                'Excess': adm['admissions'] - cap,
+                'Last Violation': adm['day'].strftime('%Y-%m-%d') if adm['day'] else 'N/A'
             })
 
     # 6) Build DataFrame
-    df = pd.DataFrame(enhanced)
+    df = pd.DataFrame(violations)
 
     # 7) Write to Excel with yellow fill on “Excess”
     buffer = io.BytesIO()
@@ -2675,69 +2718,70 @@ def download_hospital_bed_cases_excel(request):
 @csrf_protect
 def download_hospital_bed_report(request):
     # 1) Read inputs
-    district_param = request.POST.get('district','')
+    district_param = request.POST.get('district', '')
     districts = [d for d in district_param.split(',') if d]
     startDate = request.POST.get('start_date')
     endDate = request.POST.get('end_date')
     start_date, end_date = parse_date(startDate, endDate)
 
     # strip base64
-    hc = request.POST.get('hospital_chart','')
-    hospital_chart_b64 = hc.split('base64,',1)[1] if 'base64,' in hc else ''
+    hc = request.POST.get('hospital_chart', '')
+    hospital_chart_b64 = hc.split('base64,', 1)[1] if 'base64,' in hc else ''
 
     hc_map = request.POST.get('hospital_beds', '')
-    hosp_bed_map_b64 = hc_map.split('base64,',1)[1] if 'base64,' in hc_map else ''
+    hosp_bed_map_b64 = hc_map.split('base64,', 1)[1] if 'base64,' in hc_map else ''
 
     # 2) Build full violations list (no pagination)
-    beds = {b['hospital_id']: b['bed_strength']
-            for b in HospitalBeds.objects.values('hospital_id','bed_strength')}
+    bed_strengths = hospital_bed_cases_base_query()
+    hospital_ids = list(bed_strengths.keys())
 
-    raw = (
-      Last24Hour.objects
-      .filter(
-        Q(admission_date__date__gte=start_date) &
-        Q(admission_date__date__lte=end_date) |
-        Q(admission_date__isnull=True, preauth_initiated_date__date__gte=start_date) &
-        Q(admission_date__isnull=True, preauth_initiated_date__date__lte=end_date)
-      )
-      .values('hospital_id','hospital_name','patient_district_name','state_name')
-      .annotate(
-        admissions=Count('id'),
-        last_violation=Max('admission_date')
-      )
+    qs = (
+        Last24Hour.objects
+        .filter(
+            hospital_type='P',
+            hospital_code__in=hospital_ids,
+            admission_dt__date__gte=start_date,
+            admission_dt__date__lte=end_date,
+        )
     )
     if districts:
-      raw = raw.filter(patient_district_name__in=districts)
+        qs = qs.filter(patient_district_name__in=districts)
+
+    admissions = (
+        qs
+        .annotate(day=TruncDate('admission_dt'))
+        .values('hospital_code', 'hospital_name', 'patient_district_name', 'hosp_state_name', 'day')
+        .annotate(admissions=Count('id'))
+    )
 
     rows = []
-    for i,v in enumerate(raw, start=1):
-      cap = beds.get(v['hospital_id'],0)
-      if v['admissions'] > cap:
-        rows.append({
-          'serial_no':      i,
-          'hospital_id':    v['hospital_id'],
-          'hospital_name':  v['hospital_name'],
-          'district':       v['patient_district_name'],
-          'state':          v['state_name'],
-          'bed_capacity':   cap,
-          'admissions':     v['admissions'],
-          'excess':         v['admissions']-cap,
-          'last_violation': (v['last_violation'].date().isoformat()
-                             if v['last_violation'] else 'N/A')
-        })
+    for i, adm in enumerate(admissions, start=1):
+        cap = bed_strengths.get(adm['hospital_code'], 0)
+        if adm['admissions'] > cap:
+            rows.append({
+                'serial_no':      i,
+                'hospital_id':    adm['hospital_code'],
+                'hospital_name':  adm['hospital_name'],
+                'district':       adm['patient_district_name'],
+                'state':          adm['hosp_state_name'],
+                'bed_capacity':   cap,
+                'admissions':     adm['admissions'],
+                'excess':         adm['admissions'] - cap,
+                'last_violation': adm['day'].strftime('%Y-%m-%d') if adm['day'] else 'N/A'
+            })
 
     # 3) report_districts from those rows
     report_districts = sorted({r['district'] for r in rows})
 
-    # 4) Render
+    # 4) Render PDF
     context = {
-      'logo_url':         request.build_absolute_uri('/static/images/pmjaylogo.png'),
-      'title':            'PMJAY FRAUD DETECTION ANALYSIS REPORT',
-      'date':            datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-      'report_districts': report_districts,
-      'table_rows':       rows,
-      'hospital_chart_b64': hospital_chart_b64,
-      'hosp_bed_map_b64': hosp_bed_map_b64,
+        'logo_url':          request.build_absolute_uri('/static/images/pmjaylogo.png'),
+        'title':             'SAFU DASHBOARD ANALYSIS REPORT',
+        'date':              datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'report_districts':  report_districts,
+        'table_rows':        rows,
+        'hospital_chart_b64': hospital_chart_b64,
+        'hosp_bed_map_b64':   hosp_bed_map_b64,
     }
     html = render_to_string('hospital_bed_report.html', context)
     pdf  = HTML(string=html, base_url=request.build_absolute_uri('/')).write_pdf()
@@ -2897,7 +2941,7 @@ def download_family_id_cases_report(request):
     # 4) render template
     context = {
         'logo_url':            request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':               'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'title':               'SAFU DASHBOARD ANALYSIS REPORT',
         'date':                datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'report_districts':    report_districts,
         'table_rows':          rows,
@@ -3056,7 +3100,7 @@ def download_geo_anomalies_pdf_report(request):
     # 5) Render PDF
     context = {
       'logo_url':         request.build_absolute_uri('/static/images/pmjaylogo.png'),
-      'title':            'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+      'title':            'SAFU DASHBOARD ANALYSIS REPORT',
       'date':             datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
       'report_districts': report_districts,
       'table_rows':       rows,
@@ -3408,7 +3452,7 @@ def download_ophthalmology_pdf_report(request):
     # —9— Render template → PDF
     context = {
         'logo_url':         request.build_absolute_uri('/static/images/pmjaylogo.png'),
-        'title':            'PMJAY FRAUD DETECTION ANALYSIS REPORT',
+        'title':            'SAFU DASHBOARD ANALYSIS REPORT',
         'date':             datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'violation_type':   violation_type,
         'report_districts': report_districts,
