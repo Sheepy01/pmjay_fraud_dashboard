@@ -1974,10 +1974,10 @@ def load_dataframes():
         # Load hospital capacities
         capacity_qs = HospitalBeds.objects.filter(
             number_of_surgeons__isnull=False
-        ).values('hospital_id', 'number_of_surgeons')
+        ).values('hospital_code', 'number_of_surgeons')
         
         capacity_map = {
-            item['hospital_id']: item['number_of_surgeons'] * 30
+            item['hospital_code']: item['number_of_surgeons'] * 30
             for item in capacity_qs
         }
 
@@ -1987,16 +1987,15 @@ def load_dataframes():
             'hospital_code',
             'procedure_code',
             'patient_district_name',
-            'age_years',
+            'age',
             'patient_name',
             'gender',
             'registration_id',
             'case_id',
             'member_id',
             'hospital_name',
-            'preauth_initiated_date',
-            'preauth_initiated_time',
-            'hospital_id'  # Make sure this exists for capacity checks
+            'preauth_init_date',
+            'hospital_code'
         )
         
         df_last = pd.DataFrame.from_records(qs)
@@ -2022,16 +2021,16 @@ def get_ophthalmology_cases(request):
     # Load data
     df, cap_map = load_dataframes()
 
-    # Convert date strings to datetime objects
-    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
+    # Ensure datetime conversion
+    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'], errors='coerce')
 
     # Helper function to create masks
     def period_mask(start_date, end_date):
         mask = (
             (df['hospital_type'] == 'P') &
             (df['procedure_code'].str.contains('SE', na=False)) &
-            (df['preauth_initiated_date'].dt.date >= start_date) &
-            (df['preauth_initiated_date'].dt.date <= end_date)
+            (df['preauth_init_date'].dt.date >= start_date) &
+            (df['preauth_init_date'].dt.date <= end_date)
         )
         if districts:
             mask &= df['patient_district_name'].isin(districts)
@@ -2044,29 +2043,19 @@ def get_ophthalmology_cases(request):
 
     # 1. Age <40 counts (unchanged)
     def count_age(mask):
-        return int(df.loc[mask & (df['age_years'] < 40)].shape[0])
+        return int(df.loc[mask & (df['age'] < 40)].shape[0])
     
     age_total = count_age(mask_total)
     age_yesterday = count_age(mask_yest)
     age_last_30 = count_age(mask_30)
 
-    # 2. Preauth time validation (simplified)
+    # 2. Preauth time validation (using preauth_init_date hour)
     def count_preauth(mask):
-        # Extract hour directly from time string
-        def extract_hour(time_str):
-            try:
-                if pd.isna(time_str):
-                    return None
-                return int(time_str.split(':')[0])
-            except:
-                return None
-        
         subset = df.loc[mask].copy()
-        subset['hour'] = subset['preauth_initiated_time'].apply(extract_hour)
+        subset['hour'] = subset['preauth_init_date'].dt.hour
         
-        valid_hours = subset['hour'].notna()
         violations = subset[
-            valid_hours & 
+            (subset['hour'].notna()) &
             ((subset['hour'] < 8) | (subset['hour'] >= 18))
         ]
         return len(violations)
@@ -2078,8 +2067,8 @@ def get_ophthalmology_cases(request):
     # 3. OT capacity checks (unchanged)
     def compute_ot_exact(df_period):
         ot_total = 0
-        for hospital_id, cap in cap_map.items():
-            sub = df_period[df_period['hospital_id'] == hospital_id]
+        for hospital_code, cap in cap_map.items():
+            sub = df_period[df_period['hospital_code'] == hospital_code]
             total = len(sub)
             if total > cap:
                 ot_total += (total - cap)
@@ -2129,21 +2118,15 @@ def get_ophthalmology_details(request):
     df, cap_map = load_dataframes()
 
     # 4) Ensure preauth date/time are usable
-    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
-    # extract hour from time‐string
-    def _extract_hour(ts):
-        try:
-            return int(ts.split(':')[0])
-        except:
-            return None
-    df['preauth_hour'] = df['preauth_initiated_time'].apply(_extract_hour)
+    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'])
+    df['preauth_hour'] = df['preauth_init_date'].dt.hour
 
     # 5) Build the “period” mask exactly as in get_ophthalmology_cases
     mask = (
         df['hospital_type'].eq('P') &
         df['procedure_code'].str.contains('SE', na=False) &
-        df['preauth_initiated_date'].dt.date.ge(start_date) &
-        df['preauth_initiated_date'].dt.date.le(end_date)
+        df['preauth_init_date'].dt.date.ge(start_date) &
+        df['preauth_init_date'].dt.date.le(end_date)
     )
     if districts:
         mask &= df['patient_district_name'].isin(districts)
@@ -2151,14 +2134,14 @@ def get_ophthalmology_details(request):
     # 6) Filter & sort by date then time
     df_base = df.loc[mask].copy()
     df_base.sort_values(
-        by=['preauth_initiated_date', 'preauth_initiated_time'],
+        by=['preauth_init_date'],
         inplace=True
     )
 
     # 7) Compute which rows are OT-overflow
     ot_indices = []
     for hosp_id, cap in cap_map.items():
-        sub = df_base[df_base['hospital_id'] == hosp_id]
+        sub = df_base[df_base['hospital_code'] == hosp_id]
         if len(sub) > cap:
             # everything beyond the first `cap` is flagged
             overflow = sub.iloc[cap:]
@@ -2167,18 +2150,18 @@ def get_ophthalmology_details(request):
 
     # 8) Build the violation mask per `type`
     if violation_type == 'age':
-        vio_mask = df_base['age_years'] < 40
+        vio_mask = df_base['age'] < 40
     elif violation_type == 'preauth':
         vio_mask = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
     elif violation_type == 'ot':
         vio_mask = df_base.index.isin(ot_set)
     elif violation_type == 'multiple':
-        m_age     = df_base['age_years'] < 40
+        m_age     = df_base['age'] < 40
         m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m_ot      = df_base.index.isin(ot_set)
         vio_mask = (m_age.astype(int) + m_preauth.astype(int) + m_ot.astype(int)) > 1
     else:  # 'all'
-        m_age     = df_base['age_years'] < 40
+        m_age     = df_base['age'] < 40
         m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m_ot      = df_base.index.isin(ot_set)
         vio_mask = m_age | m_preauth | m_ot
@@ -2200,13 +2183,13 @@ def get_ophthalmology_details(request):
             'serial_no':      serial,
             'claim_id':       row.registration_id or row.case_id or 'N/A',
             'patient_name':   row.patient_name or f"Patient {row.member_id}",
-            'hospital_id':    row.hospital_id or 'N/A',
+            'hospital_id':    row.hospital_code or 'N/A',
             'hospital_name':  row.hospital_name or 'N/A',
-            'patient_district_name':  row.patient_district_name or 'N/A',
+            'district_name':  row.patient_district_name or 'N/A',
             'amount':         getattr(row, 'preauth_initiated_amount', 0) or 0,
-            'age':            row.age_years,
-            'preauth_time':   row.preauth_initiated_time,
-            'age_violation':      (row.age_years < 40) if violation_type in ('age','all','multiple') else None,
+            'age':            row.age,
+            'preauth_time':   row.preauth_init_date.strftime("%Y-%m-%d %H:%M:%S") if row.preauth_init_date else 'N/A',
+            'age_violation':      (row.age < 40) if violation_type in ('age','all','multiple') else None,
             'preauth_violation':  ((row.preauth_hour < 8) or (row.preauth_hour >= 18)) if violation_type in ('preauth','all','multiple') else None,
             'ot_violation':       (row.Index in ot_set) if violation_type in ('ot','all','multiple') else None,
         })
@@ -2238,20 +2221,15 @@ def get_ophthalmology_distribution(request):
     df, cap_map = load_dataframes()
 
     # 4) Prepare date & hour columns
-    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
-    def _extract_hour(ts):
-        try:
-            return int(ts.split(':')[0])
-        except:
-            return None
-    df['preauth_hour'] = df['preauth_initiated_time'].apply(_extract_hour)
+    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'])
+    df['preauth_hour'] = df['preauth_init_date'].dt.hour
 
     # 5) Base mask over the requested period
     mask = (
         df['hospital_type'].eq('P') &
         df['procedure_code'].str.contains('SE', na=False) &
-        df['preauth_initiated_date'].dt.date.ge(start_date) &
-        df['preauth_initiated_date'].dt.date.le(end_date)
+        df['preauth_init_date'].dt.date.ge(start_date) &
+        df['preauth_init_date'].dt.date.le(end_date)
     )
     if districts:
         mask &= df['patient_district_name'].isin(districts)
@@ -2261,7 +2239,7 @@ def get_ophthalmology_distribution(request):
     # 6) Compute OT‐overflow indices for the period
     ot_indices = []
     for hosp_id, cap in cap_map.items():
-        sub = df_base[df_base['hospital_id'] == hosp_id]
+        sub = df_base[df_base['hospital_code'] == hosp_id]
         if len(sub) > cap:
             overflow = sub.iloc[cap:]
             ot_indices.extend(overflow.index.tolist())
@@ -2269,18 +2247,18 @@ def get_ophthalmology_distribution(request):
 
     # 7) Build violation mask
     if violation_type == 'age':
-        vio_mask = df_base['age_years'] < 40
+        vio_mask = df_base['age'] < 40
     elif violation_type == 'preauth':
         vio_mask = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
     elif violation_type == 'ot':
         vio_mask = df_base.index.isin(ot_set)
     elif violation_type == 'multiple':
-        m_age     = df_base['age_years'] < 40
+        m_age     = df_base['age'] < 40
         m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m_ot      = df_base.index.isin(ot_set)
         vio_mask = (m_age.astype(int) + m_preauth.astype(int) + m_ot.astype(int)) > 1
     else:  # 'all'
-        m_age     = df_base['age_years'] < 40
+        m_age     = df_base['age'] < 40
         m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m_ot      = df_base.index.isin(ot_set)
         vio_mask = m_age | m_preauth | m_ot
@@ -2319,20 +2297,15 @@ def get_ophthalmology_demographics(request, type):
     df, cap_map = load_dataframes()
 
     # 4) Prepare date/time columns
-    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
-    def _hour(t):
-        try:
-            return int(t.split(':')[0])
-        except:
-            return None
-    df['preauth_hour'] = df['preauth_initiated_time'].apply(_hour)
+    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'])
+    df['preauth_hour'] = df['preauth_init_date'].dt.hour
 
     # 5) Base mask over [start_date, end_date]
     mask = (
         df['hospital_type'].eq('P') &
         df['procedure_code'].str.contains('SE', na=False) &
-        df['preauth_initiated_date'].dt.date.ge(start_date) &
-        df['preauth_initiated_date'].dt.date.le(end_date)
+        df['preauth_init_date'].dt.date.ge(start_date) &
+        df['preauth_init_date'].dt.date.le(end_date)
     )
     if districts:
         mask &= df['patient_district_name'].isin(districts)
@@ -2342,14 +2315,14 @@ def get_ophthalmology_demographics(request, type):
     # 6) Compute OT-overflow set
     ot_indices = []
     for hid, cap in cap_map.items():
-        sub = df_base[df_base['hospital_id'] == hid]
+        sub = df_base[df_base['hospital_code'] == hid]
         if len(sub) > cap:
             ot_indices += sub.iloc[cap:].index.tolist()
     ot_set = set(ot_indices)
 
     # 7) Build violation mask
     if violation_type == 'age':
-        vio = df_base['age_years'] < 40
+        vio = df_base['age'] < 40
 
     elif violation_type == 'preauth':
         vio = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
@@ -2358,13 +2331,13 @@ def get_ophthalmology_demographics(request, type):
         vio = df_base.index.isin(ot_set)
 
     elif violation_type == 'multiple':
-        m1 = df_base['age_years'] < 40
+        m1 = df_base['age'] < 40
         m2 = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m3 = df_base.index.isin(ot_set)
         vio = (m1.astype(int) + m2.astype(int) + m3.astype(int)) > 1
 
     else:  # 'all'
-        m1 = df_base['age_years'] < 40
+        m1 = df_base['age'] < 40
         m2 = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
         m3 = df_base.index.isin(ot_set)
         vio = m1 | m2 | m3
@@ -2377,7 +2350,7 @@ def get_ophthalmology_demographics(request, type):
         bins = [0, 20, 30, 40, 50, 60, 200]
         labels = ['≤20','21-30','31-40','41-50','51-60','60+']
         df_flagged['age_group'] = pd.cut(
-            df_flagged['age_years'].fillna(-1),
+            df_flagged['age'].fillna(-1),
             bins=bins,
             labels=labels,
             right=False
@@ -2424,14 +2397,14 @@ def get_ophthalmology_violations_geo(request):
     df, cap_map = load_dataframes()
 
     # 4) Parse date & hour
-    df['preauth_initiated_date'] = pd.to_datetime(df['preauth_initiated_date'])
-    df['preauth_hour'] = df['preauth_initiated_time'].str.split(':').str[0].astype(float, errors='ignore')
+    df['preauth_init_date'] = pd.to_datetime(df['preauth_init_date'])
+    df['preauth_hour'] = df['preauth_init_date'].dt.hour
 
     # 5) Base filter
     mask = (
         df['hospital_type'].eq('P') &
         df['procedure_code'].str.contains('SE', na=False) &
-        df['preauth_initiated_date'].dt.date.between(start_date, end_date)
+        df['preauth_init_date'].dt.date.between(start_date, end_date)
     )
     if districts:
         mask &= df['patient_district_name'].isin(districts)
@@ -2440,13 +2413,13 @@ def get_ophthalmology_violations_geo(request):
     # 6) Compute OT overflows
     ot_indices = []
     for hosp_id, cap in cap_map.items():
-        sub = df_base[df_base['hospital_id'] == hosp_id]
+        sub = df_base[df_base['hospital_code'] == hosp_id]
         if len(sub) > cap:
             ot_indices += sub.iloc[cap:].index.tolist()
     ot_set = set(ot_indices)
 
     # 7) Build violation mask
-    m_age     = df_base['age_years'] < 40
+    m_age     = df_base['age'] < 40
     m_preauth = df_base['preauth_hour'].lt(8) | df_base['preauth_hour'].ge(18)
     m_ot      = df_base.index.isin(ot_set)
 
@@ -3184,18 +3157,18 @@ def download_ophthalmology_excel(request):
 
     # —2— Build capacity map
     cap_map = {
-        rec['hospital_id']: rec['number_of_surgeons'] * 30
+        rec['hospital_code']: rec['number_of_surgeons'] * 30
         for rec in HospitalBeds.objects
                              .filter(number_of_surgeons__isnull=False)
-                             .values('hospital_id', 'number_of_surgeons')
+                             .values('hospital_code', 'number_of_surgeons')
     }
 
     # —3— Base queryset over the date range
     base_qs = Last24Hour.objects.filter(
         hospital_type='P',
         procedure_code__contains='SE',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     if districts:
         base_qs = base_qs.filter(patient_district_name__in=districts)
@@ -3205,8 +3178,8 @@ def download_ophthalmology_excel(request):
     for hid, cap in cap_map.items():
         qs_h = (
             base_qs
-            .filter(hospital_id=hid)
-            .order_by('preauth_initiated_date', 'preauth_initiated_time')
+            .filter(hospital_code=hid)
+            .order_by('preauth_init_date')
         )
         total = qs_h.count()
         if total > cap:
@@ -3216,21 +3189,21 @@ def download_ophthalmology_excel(request):
     # —5— Helper to choose the right QS for each sheet
     def qs_for(t):
         if t == 'age':
-            return base_qs.filter(age_years__lt=40)
+            return base_qs.filter(age__lt=40)
         if t == 'ot':
             return base_qs.filter(id__in=flagged_ot_ids)
         if t == 'preauth':
             return base_qs.exclude(
-                preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
+                Q(preauth_init_date__hour__gte=8) & Q(preauth_init_date__hour__lt=18)
             )
         if t == 'multiple':
-            # Multiple: more than one violation among age, ot, preauth
-            age_ids = set(base_qs.filter(age_years__lt=40).values_list('id', flat=True))
+            age_ids = set(base_qs.filter(age__lt=40).values_list('id', flat=True))
             ot_ids = set(flagged_ot_ids)
-            preauth_ids = set(base_qs.exclude(
-                preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
-            ).values_list('id', flat=True))
-            # Count how many violations per case
+            preauth_ids = set(
+                base_qs.exclude(
+                    Q(preauth_init_date__hour__gte=8) & Q(preauth_init_date__hour__lt=18)
+                ).values_list('id', flat=True)
+            )
             from collections import Counter
             all_ids = list(age_ids) + list(ot_ids) + list(preauth_ids)
             counts = Counter(all_ids)
@@ -3238,9 +3211,9 @@ def download_ophthalmology_excel(request):
             return base_qs.filter(id__in=multiple_ids)
         # 'all'
         return base_qs.filter(
-            Q(age_years__lt=40) |
+            Q(age__lt=40) |
             Q(id__in=flagged_ot_ids) |
-            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+            ~Q(preauth_init_date__hour__gte=8, preauth_init_date__hour__lt=18)
         )
 
     # —6— Define columns for each sheet
@@ -3249,56 +3222,55 @@ def download_ophthalmology_excel(request):
         ('Claim ID',     lambda c,i: c.registration_id or c.case_id or 'N/A'),
         ('Patient Name', lambda c,i: c.patient_name or f"Patient {c.member_id}"),
         ('District',     lambda c,i: c.patient_district_name or 'N/A'),
-        ('Hospital ID',  lambda c,i: c.hospital_id or 'N/A'),
+        ('Hospital ID',  lambda c,i: c.hospital_code or 'N/A'),
         ('Hospital Name',lambda c,i: c.hospital_name or 'N/A'),
-        ('Amount',       lambda c,i: getattr(c,'preauth_initiated_amount',0) or 0),
+        ('Amount',       lambda c,i: getattr(c,'amount_preauth_initiated',0) or 0),
+        ('Preauth Time', lambda c,i: c.preauth_init_date.strftime("%Y-%m-%d %H:%M:%S") if c.preauth_init_date else 'N/A'),
     ]
 
     sheets = {
         'all': {
             'title': 'All cases',
             'fields': common + [
-                ('Age<40',       lambda c,i: bool(c.age_years and c.age_years < 40)),
-                ('OT Cases',     lambda c,i: c.id in flagged_ot_ids),
-                ('Pre-auth Out', lambda c,i: bool(
-                    c.preauth_initiated_time and
-                    not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
-                ))
+                ('Age > 40',       lambda c,i: "Age > 40" if (c.age and c.age < 40) else None),
+                ('OT Cases',     lambda c,i: "OT" if (c.id in flagged_ot_ids) else None),
+                ('Pre-auth Out', lambda c,i: "Preauth Out" if (
+                    c.preauth_init_date and (c.preauth_init_date.hour < 8 or c.preauth_init_date.hour >= 18)
+                ) else None)
             ]
         },
         'age': {
-            'title': 'Age <40',
+            'title': 'Age > 40',
             'fields': common + [
-                ('Age<40', lambda c,i: bool(c.age_years and c.age_years < 40))
+                ('Age > 40', lambda c,i: "Age > 40" if (c.age and c.age < 40) else None)
             ]
         },
         'ot': {
             'title': 'OT Cases',
             'fields': common + [
-                ('OT Cases', lambda c,i: c.id in flagged_ot_ids)
+                ('OT Cases', lambda c,i: "OT" if (c.id in flagged_ot_ids) else None)
             ]
         },
         'preauth': {
             'title': 'Pre-auth Time',
             'fields': common + [
-                ('Pre-auth Out', lambda c,i: bool(
-                    c.preauth_initiated_time and
-                    not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
-                ))
+                ('Pre-auth Out', lambda c,i: "Preauth Out" if (
+                    c.preauth_init_date and (c.preauth_init_date.hour < 8 or c.preauth_init_date.hour >= 18)
+                ) else None)
             ]
         },
         'multiple': {
             'title': 'More Than One Violation',
             'fields': common + [
-                ('Age<40',       lambda c,i: bool(c.age_years and c.age_years < 40)),
-                ('OT Cases',     lambda c,i: c.id in flagged_ot_ids),
-                ('Pre-auth Out', lambda c,i: bool(
-                    c.preauth_initiated_time and
-                    not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
-                ))
+                ('Age > 40',       lambda c,i: "Age > 40" if (c.age and c.age < 40) else None),
+                ('OT Cases',     lambda c,i: "OT" if (c.id in flagged_ot_ids) else None),
+                ('Pre-auth Out', lambda c,i: "Preauth Out" if (
+                    c.preauth_init_date and (c.preauth_init_date.hour < 8 or c.preauth_init_date.hour >= 18)
+                ) else None)
             ]
         }
     }
+
 
     # —7— Pick which sheets to emit
     if violation_type in sheets and violation_type != 'all':
@@ -3310,7 +3282,7 @@ def download_ophthalmology_excel(request):
     dfs = {}
     for key in keys:
         rows = []
-        qs_iter = qs_for(key).order_by('preauth_initiated_date','preauth_initiated_time')
+        qs_iter = qs_for(key).order_by('preauth_init_date')
         for idx, case in enumerate(qs_iter, start=1):
             row = {col: fn(case, idx) for col, fn in sheets[key]['fields']}
             rows.append(row)
@@ -3333,10 +3305,9 @@ def download_ophthalmology_excel(request):
             df_sheet.to_excel(writer, index=False, sheet_name=title)
             ws = writer.sheets[title]
 
-            # header → column index
             headers = [cell.value for cell in ws[1]]
             idx_map = {h: i+1 for i,h in enumerate(headers)}
-            a_i = idx_map.get('Age<40')
+            a_i = idx_map.get('Age > 40')
             o_i = idx_map.get('OT Cases')
             p_i = idx_map.get('Pre-auth Out')
 
@@ -3345,7 +3316,6 @@ def download_ophthalmology_excel(request):
                 ov = o_i and row[o_i-1].value
                 pv = p_i and row[p_i-1].value
 
-                # single‐type fills
                 if key in ('age','all') and av and a_i:
                     row[a_i-1].fill = fills['age']
                 if key in ('ot','all') and ov and o_i:
@@ -3353,7 +3323,6 @@ def download_ophthalmology_excel(request):
                 if key in ('preauth','all') and pv and p_i:
                     row[p_i-1].fill = fills['preauth']
 
-                # triple overlap only on "all"
                 if key=='all' and av and ov and pv:
                     for cell in row:
                         cell.fill = fills['all_high']
@@ -3367,13 +3336,12 @@ def download_ophthalmology_excel(request):
                         row[p_i-1].fill = fills['preauth']
 
     output.seek(0)
-    # —10— Build filename with date range
     fname = f"ophthalmology_{violation_type}_{start_date}_to_{end_date}.xlsx"
     resp = HttpResponse(
         output.read(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    resp['Content-Disposition'] = f'attachment; filename=\"{fname}\"'
     return resp
 
 @require_POST
@@ -3396,7 +3364,6 @@ def download_ophthalmology_pdf_report(request):
 
     # —4— Collect chart images & callouts
     charts = {
-        # 'combined_chart': strip_b64('combined_chart'),
         'age_chart':      strip_b64('age_chart'),
         'ot_chart':       strip_b64('ot_chart'),
         'preauth_chart':  strip_b64('preauth_chart'),
@@ -3419,25 +3386,25 @@ def download_ophthalmology_pdf_report(request):
     base_qs = Last24Hour.objects.filter(
         hospital_type='P',
         procedure_code__contains='SE',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     if districts:
         base_qs = base_qs.filter(patient_district_name__in=districts)
 
     # —6— Compute OT-overflow IDs
     cap_map = {
-        rec['hospital_id']: rec['number_of_surgeons'] * 30
+        rec['hospital_code']: rec['number_of_surgeons'] * 30
         for rec in HospitalBeds.objects
                                   .filter(number_of_surgeons__isnull=False)
-                                  .values('hospital_id','number_of_surgeons')
+                                  .values('hospital_code','number_of_surgeons')
     }
     flagged_ot = set()
     for hid, cap in cap_map.items():
         qs_h = (
             base_qs
-            .filter(hospital_id=hid)
-            .order_by('preauth_initiated_date','preauth_initiated_time')
+            .filter(hospital_code=hid)
+            .order_by('preauth_init_date')
         )
         total = qs_h.count()
         if total > cap:
@@ -3446,47 +3413,46 @@ def download_ophthalmology_pdf_report(request):
     # —7— Section‐specific QS
     def section_qs(vtype):
         if vtype == 'age':
-            return base_qs.filter(age_years__lt=40)
+            return base_qs.filter(age__lt=40)
         if vtype == 'ot':
             return base_qs.filter(id__in=flagged_ot)
         if vtype == 'preauth':
             return base_qs.exclude(
-                preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):'
+                preauth_init_date__hour__gte=8,
+                preauth_init_date__hour__lt=18
             )
         # all
         return base_qs.filter(
-            Q(age_years__lt=40) |
+            Q(age__lt=40) |
             Q(id__in=flagged_ot) |
-            ~Q(preauth_initiated_time__regex=r'^(0[8-9]|1[0-7]):')
+            ~Q(preauth_init_date__hour__gte=8, preauth_init_date__hour__lt=18)
         )
 
     # —8— Build rows for each section
     rows = {}
     for sec in ['all','age','ot','preauth','multiple']:
-        qs_iter = section_qs(sec).order_by(
-            'preauth_initiated_date','preauth_initiated_time'
-        )
+        qs_iter = section_qs(sec).order_by('preauth_init_date')
         rows[sec] = [
             {
                 'serial_no':    i+1,
                 'claim_id':     c.registration_id or c.case_id or 'N/A',
                 'patient_name': c.patient_name or f"Patient {c.member_id}",
                 'district':     c.patient_district_name or 'N/A',
-                'hospital_id':  c.hospital_id or 'N/A',
+                'hospital_id':  c.hospital_code or 'N/A',
                 'hospital_name':c.hospital_name or 'N/A',
-                'amount':       getattr(c,'preauth_initiated_amount',0) or 0,
-                'age_lt_40':    bool(c.age_years and c.age_years < 40),
+                'amount':       getattr(c,'amount_preauth_initiated',0) or 0,
+                'age_lt_40':    bool(c.age and c.age < 40),
                 'ot_cases':     c.id in flagged_ot,
                 'preauth_time': bool(
-                    c.preauth_initiated_time and
-                    not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
+                    c.preauth_init_date and
+                    (c.preauth_init_date.hour < 8 or c.preauth_init_date.hour >= 18)
                 ),
                 'num_true': sum([
-                    bool(c.age_years and c.age_years < 40),
+                    bool(c.age and c.age < 40),
                     c.id in flagged_ot,
                     bool(
-                        c.preauth_initiated_time and
-                        not re.match(r'^(0[8-9]|1[0-7]):', c.preauth_initiated_time)
+                        c.preauth_init_date and
+                        (c.preauth_init_date.hour < 8 or c.preauth_init_date.hour >= 18)
                     )
                 ])
             }

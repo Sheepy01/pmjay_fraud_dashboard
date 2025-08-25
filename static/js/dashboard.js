@@ -2435,7 +2435,7 @@ $(document).ready(function() {
             content: `
                 <div class="violation-type-selector">
                     <button class="violation-type-btn active" data-type="all">All</button>
-                    <button class="violation-type-btn" data-type="age">Age <40</button>
+                    <button class="violation-type-btn" data-type="age">Age > 40</button>
                     <button class="violation-type-btn" data-type="ot">OT Cases</button>
                     <button class="violation-type-btn" data-type="preauth">Pre-auth Time</button>
                     <button class="violation-type-btn" data-type="multiple">More than one</button>
@@ -2605,11 +2605,11 @@ $(document).ready(function() {
             },
             updateTableHeader: function(violationType) {
                 const headers = {
-                    all: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age<40', 'OT Cases', 'Pre-auth Time'],
-                    age: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age<40'],
+                    all: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age>40', 'OT Cases', 'Pre-auth Time'],
+                    age: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Age>40'],
                     ot: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'OT Cases'],
                     preauth: ['#', 'Claim ID', 'Patient', 'Hospital ID', 'Hospital Name', 'District', 'Pre-auth Time'],
-                    multiple: ['#', 'Claim ID','Patient','Hospital ID','Hospital Name','District','Age<40','OT Cases','Pre-auth Time'],
+                    multiple: ['#', 'Claim ID','Patient','Hospital ID','Hospital Name','District','Age>40','OT Cases','Pre-auth Time'],
                 };
 
                 const headerHTML = headers[violationType].map(h => `<th>${h}</th>`).join('');
@@ -2629,13 +2629,13 @@ $(document).ready(function() {
                     let violationCols = '';
                     if (violationType === 'all' || violationType === 'multiple') {
                         violationCols = `
-                            <td class="${item.age_violation ? 'age-violation' : ''}">${item.age_violation ? 'TRUE' : 'FALSE'}</td>
-                            <td class="${item.ot_violation ? 'ot-violation' : ''}">${item.ot_violation ? 'TRUE' : 'FALSE'}</td>
-                            <td class="${item.preauth_violation ? 'preauth-violation' : ''}">${item.preauth_violation ? 'TRUE' : 'FALSE'}</td>
+                            <td class="${item.age_violation ? 'age-violation' : ''}">${item.age_violation ? '✔️' : '❌'}</td>
+                            <td class="${item.ot_violation ? 'ot-violation' : ''}">${item.ot_violation ? '✔️' : '❌'}</td>
+                            <td class="${item.preauth_violation ? 'preauth-violation' : ''}">${item.preauth_violation ? '✔️' : '❌'}</td>
                         `;
                     } else {
                         const violationClass = `${violationType}-violation`;
-                        violationCols = `<td class="${violationClass}">TRUE</td>`;
+                        violationCols = `<td class="${violationClass}">✔️</td>`;
                     }
 
                     return `<tr>${baseCols}${violationCols}</tr>`;
@@ -2736,7 +2736,7 @@ $(document).ready(function() {
                             <div class="map-group">
                                 <div class="map-container-age">
                                     <div class="map-card">
-                                        <h4>Age < 40</h4>
+                                        <h4>Age > 40</h4>
                                         <div id="ophthalmologyCataractMapAge40" class="map-view-node" style="height:600px;"></div>
                                     </div>
                                 </div>

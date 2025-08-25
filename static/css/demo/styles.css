@@ -1575,14 +1575,16 @@ white-space: nowrap;
     border-radius: 20px;
     transition: all 0.3s;
 }
+
 .violation-type-btn.active {
     color: white;
     border-color: transparent;
 }
+
 .violation-type-btn[data-type="all"].active { background: linear-gradient(45deg, #FFEB3B, #E91E63, #009688); }
-.violation-type-btn[data-type="age"].active { background: #FFEB3B; color: #000; }
-.violation-type-btn[data-type="ot"].active { background: #E91E63; }
-.violation-type-btn[data-type="preauth"].active { background: #009688; }
+.violation-type-btn[data-type="age"].active { background: linear-gradient(45deg, #FFEB3B, #cdca09); color: black;}
+.violation-type-btn[data-type="ot"].active { background: linear-gradient(45deg, #E91E63, #bb184e); }
+.violation-type-btn[data-type="preauth"].active { background: linear-gradient(45deg, #009688, #00665c); }
 
 .pie-card-group {
     margin: 20px 0;
