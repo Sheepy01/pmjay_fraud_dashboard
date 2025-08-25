@@ -236,6 +236,7 @@ $(document).ready(function() {
             updateFlaggedClaims(selectedDistricts, startDate, endDate);
             updateHighValueClaims(selectedDistricts, startDate, endDate);
             updateHospitalBedCases(selectedDistricts, startDate, endDate);
+            updateFamilyIdCases(selectedDistricts, startDate, endDate);
             updateGeoAnomalies(selectedDistricts, startDate, endDate);
             updateOphthalmology(selectedDistricts, startDate, endDate);
         });
@@ -450,6 +451,7 @@ $(document).ready(function() {
     });
 
     function updateFamilyIdCases(districts = [], startDate = '', endDate = '') {
+        console.log(districts);
         $('.family-id .card-value').html('<i class="fas fa-spinner fa-spin"></i>');
         
         $.ajax({

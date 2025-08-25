@@ -1367,6 +1367,10 @@ def get_family_id_cases(request):
     # 1) Parse district filter
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
+    GREEN = '\033[92m'  # ANSI code for bright green
+    RESET = '\033[0m'   # ANSI code to reset color to default
+
+    print(f"{GREEN}DISTRICTS: {districts}{RESET}")
 
     # 2) Parse date range from GET, default to today
     startDate = request.GET.get('start_date')
@@ -1519,7 +1523,6 @@ def get_family_id_cases_details(request):
         }
     })
 
-
 def get_family_violations_by_district(request):
     district_param = request.GET.get('district', '')
     districts = district_param.split(',') if district_param else []
@@ -1530,7 +1533,7 @@ def get_family_violations_by_district(request):
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
-        day=TruncDate('preauth_initiated_date')
+        day=TruncDate('preauth_init_date')
     ).filter(
         day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
@@ -1543,8 +1546,8 @@ def get_family_violations_by_district(request):
     result = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     
     if districts:
@@ -1570,7 +1573,7 @@ def get_family_violations_demographics(request, type):
     
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
-        day=TruncDate('preauth_initiated_date')
+        day=TruncDate('preauth_init_date')
     ).filter(
         day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
@@ -1583,8 +1586,8 @@ def get_family_violations_demographics(request, type):
     base_query = Last24Hour.objects.filter(
         hospital_type='P',
         family_id__in=Subquery(suspicious_families),
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
     
     if districts:
@@ -1592,12 +1595,12 @@ def get_family_violations_demographics(request, type):
     
     if type == 'age':
         age_groups = Case(
-            When(age_years__lt=20, then=Value('≤20')),
-            When(age_years__gte=20, age_years__lt=30, then=Value('21-30')),
-            When(age_years__gte=30, age_years__lt=40, then=Value('31-40')),
-            When(age_years__gte=40, age_years__lt=50, then=Value('41-50')),
-            When(age_years__gte=50, age_years__lt=60, then=Value('51-60')),
-            When(age_years__gte=60, then=Value('60+')),
+            When(age__lt=20, then=Value('≤20')),
+            When(age__gte=20, age__lt=30, then=Value('21-30')),
+            When(age__gte=30, age__lt=40, then=Value('31-40')),
+            When(age__gte=40, age__lt=50, then=Value('41-50')),
+            When(age__gte=50, age__lt=60, then=Value('51-60')),
+            When(age__gte=60, then=Value('60+')),
             default=Value('Unknown'),
             output_field=CharField()
         )
@@ -1654,13 +1657,13 @@ def get_family_violations_geo(request):
     # base queryset
     qs = Last24Hour.objects.filter(
         hospital_type='P',
-        preauth_initiated_date__date__gte=start_date,
-        preauth_initiated_date__date__lte=end_date
+        preauth_init_date__date__gte=start_date,
+        preauth_init_date__date__lte=end_date
     )
 
     # Subquery: Get family_ids with more than 2 cases today
     suspicious_families = Last24Hour.objects.annotate(
-        day=TruncDate('preauth_initiated_date')
+        day=TruncDate('preauth_init_date')
     ).filter(
         day__range=(start_date, end_date)
     ).values('family_id', 'day').annotate(
@@ -2803,7 +2806,7 @@ def download_family_id_cases_excel(request):
     # 3) build the subquery & base queryset
     subq = (
         Last24Hour.objects
-        .annotate(day=TruncDate('preauth_initiated_date'))
+        .annotate(day=TruncDate('preauth_init_date'))
         .values('family_id', 'day')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
@@ -2814,10 +2817,10 @@ def download_family_id_cases_excel(request):
         .filter(
             Q(hospital_type='P'),
             Q(family_id__in=Subquery(subq)),
-            Q(preauth_initiated_date__date__gte=start_date) &
-            Q(preauth_initiated_date__date__lte=end_date)
+            Q(preauth_init_date__date__gte=start_date) &
+            Q(preauth_init_date__date__lte=end_date)
         )
-        .order_by('family_id', 'preauth_initiated_date')
+        .order_by('family_id', 'preauth_init_date')
     )
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
@@ -2831,11 +2834,11 @@ def download_family_id_cases_excel(request):
             'Claim ID':      case.registration_id or case.case_id or 'N/A',
             'Patient Name':  case.patient_name or f"Patient {case.member_id}",
             'District':      case.patient_district_name or 'N/A',
-            'Preauth Initiated Date': case.preauth_initiated_date.date().isoformat() or 'N/A',
-            'Preauth Initiated Time': case.preauth_initiated_time or 'N/A',
-            'Hospital ID': case.hospital_id or 'N/A',
+            'Preauth Initiated Date': case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
+            'Preauth Initiated Time': case.preauth_init_date.strftime('%H:%M:%S') if case.preauth_init_date else 'N/A',
+            'Hospital ID': case.hospital_code or 'N/A',
             'Hospital Name': case.hospital_name or 'N/A',
-            'Date':          case.preauth_initiated_date.date().isoformat()
+            'Date':          case.preauth_init_date.strftime('%Y-%m-%d') if case.preauth_init_date else 'N/A',
         })
 
     # 5) build DataFrame
@@ -2906,7 +2909,7 @@ def download_family_id_cases_report(request):
 
     # subquery families with >2 claims today
     freq_families = Last24Hour.objects.annotate(
-        day=TruncDate('preauth_initiated_date')
+        day=TruncDate('preauth_init_date')
     ).values('family_id','day') \
      .annotate(cnt=Count('id')).filter(cnt__gt=1) \
      .values('family_id')
@@ -2914,9 +2917,9 @@ def download_family_id_cases_report(request):
     qs = Last24Hour.objects.filter(
         Q(hospital_type='P'),
         Q(family_id__in=Subquery(freq_families)),
-        Q(preauth_initiated_date__date__gte=start_date) &
-        Q(preauth_initiated_date__date__lte=end_date)
-    ).order_by('family_id','preauth_initiated_date')
+        Q(preauth_init_date__date__gte=start_date) &
+        Q(preauth_init_date__date__lte=end_date)
+    ).order_by('family_id','preauth_init_date')
 
     if districts:
         qs = qs.filter(patient_district_name__in=districts)
@@ -2929,9 +2932,9 @@ def download_family_id_cases_report(request):
             'claim_id':     c.registration_id or c.case_id or 'N/A',
             'patient_name': c.patient_name or f"Patient {c.member_id}",
             'district':     c.patient_district_name or 'N/A',
-            'preauth_initiated_date':     c.preauth_initiated_date.date().isoformat() or 'N/A',
-            'preauth_initiated_time':     c.preauth_initiated_time or 'N/A',
-            'hospital_id':     c.hospital_id or 'N/A',
+            'preauth_initiated_date':     c.preauth_init_date.strftime('%Y-%m-%d') if c.preauth_init_date else 'N/A',
+            'preauth_initiated_time':     c.preauth_init_date.strftime('%H:%M:%S') if c.preauth_init_date else 'N/A',
+            'hospital_id':     c.hospital_code or 'N/A',
             'hospital_name':     c.hospital_name or 'N/A'
         })
 
